@@ -1,0 +1,83 @@
+name: Build and Release
+
+# 触发规则：保留你的配置，可选开启tag自动触发
+on:
+  push:
+    # tags:
+    #   - 'v*'  # 推送v开头标签时自动构建并发布Release，例如v1.0.0、v2.1.0
+  workflow_dispatch:  # 允许手动在GitHub页面触发构建
+
+# 工作流权限：允许创建Release、上传资产
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    # 使用GitHub官方Windows Server 2022镜像（预装VS2022、MSBuild、Windows Kits）
+    runs-on: windows-2022
+    steps:
+      # 步骤1：拉取代码到Runner
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1  # 仅拉取最新代码，加快速度
+
+      # 步骤2：配置VS2022环境，加载MSBuild/VC工具链（关键：Windows编译必须）
+      - name: Setup MSBuild environment
+        uses: microsoft/setup-msbuild@v2
+        with:
+          msbuild-architecture: x64  # 适配x64编译
+          visualstudio-version: 2022  # 指定VS2022
+
+      # 步骤3：编译项目（核心：解决编码问题+MSBuild编译x64 Release）
+      - name: Build with MSBuild
+        run: |
+          chcp 65001  # 切换Runner编码为UTF-8，解决中文C4566警告
+          # 编译sln，指定配置Release、平台x64，输出编译日志方便排错
+          msbuild "autorecorder/WeChatRecorder.sln" ^
+            /p:Configuration=Release ^
+            /p:Platform=x64 ^
+            /p:CharacterSet=Unicode ^  # 强制Unicode字符集，适配MessageBoxW
+            /p:AdditionalOptions=/utf-8 ^  # 传递/utf-8编译开关，根治中文编码
+            /m /v:m  # /m多线程编译加快速度，/v:m简化日志（可改为/v:d看详细日志）
+
+      # 步骤4：整理编译产物（只保留可执行文件，剔除中间文件，方便打包）
+      - name: Prepare release artifacts
+        run: |
+          # 创建产物目录
+          New-Item -ItemType Directory -Path ./release -Force
+          # 复制x64 Release下的可执行文件到release目录（根据你的项目路径调整，确认exe位置）
+          Copy-Item -Path "./autorecorder/x64/Release/WeChatRecorder.exe" -Destination ./release/
+          # 若项目有依赖的DLL/配置文件/资源文件，在此处添加Copy-Item复制到release目录
+          # 示例：Copy-Item -Path "./autorecorder/x64/Release/xxx.dll" -Destination ./release/
+
+      # 步骤5：打包产物为ZIP（Windows用户下载更友好）
+      - name: Package release files
+        run: |
+          # 压缩release目录为ZIP包，命名包含项目名+系统+架构
+          Compress-Archive -Path ./release/* -DestinationPath ./WeChatRecorder-Win64-Release.zip
+
+      # 步骤6：上传ZIP包为构建产物（手动触发时可在Actions页面下载，永久保留）
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: WeChatRecorder-Win64
+          path: ./WeChatRecorder-Win64-Release.zip
+          retention-days: 90  # 产物保留90天，可改为永久（unlimited）
+
+      # 步骤7：自动创建GitHub Release并上传ZIP包（仅当推送tag时触发，可选）
+      - name: Create GitHub Release and upload assets
+        if: startsWith(github.ref, 'refs/tags/')  # 仅tag推送时执行
+        uses: softprops/action-gh-release@v2
+        with:
+          # Release标题和描述，默认使用tag名，可手动修改
+          name: Release ${{ github.ref_name }}
+          body: |
+            ## WeChatRecorder 最新版本
+            - 编译环境：Windows Server 2022 + VS2022 + MSBuild 17.x
+            - 架构：x64 Release
+            - 功能：微信录音、自动检测、手动录音、黑名单等
+          # 上传的产物包
+          files: ./WeChatRecorder-Win64-Release.zip
+          # 可选：设置为预发布版本（true/false）
+          prerelease: false

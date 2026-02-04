@@ -1,0 +1,89 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # 当推送以v开头的标签时触发,例如 v1.0.0
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v2
+      
+    - name: Restore NuGet packages
+      run: nuget restore WeChatRecorder.sln
+      
+    - name: Build Solution
+      run: |
+        chcp 65001
+        msbuild WeChatRecorder.sln /p:Configuration=Release /p:Platform=x64
+      
+    - name: Create Release Package
+      run: |
+        mkdir release-package
+        copy x64\Release\WeChatRecorder.exe release-package\
+        copy README.md release-package\
+        echo "请从 https://gyan.dev/ffmpeg/builds/ 下载 FFmpeg 并将 ffmpeg.exe 放置在同一目录下" > release-package\FFMPEG_README.txt
+      shell: cmd
+      
+    - name: Archive Release
+      run: |
+        Compress-Archive -Path release-package\* -DestinationPath WeChatRecorder-Release.zip
+      shell: powershell
+      
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GIT_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: Release ${{ github.ref_name }}
+        body: |
+          ## WeCall Recorder - 自动拾音工具
+          
+          ### 📦 安装说明
+          1. 下载 `WeChatRecorder-Release.zip` 并解压
+          2. 从 [gyan.dev](https://gyan.dev/ffmpeg/builds/) 下载 FFmpeg (推荐 full 或 essentials 版本)
+          3. 将 `ffmpeg.exe` 放在与 `WeChatRecorder.exe` 相同的目录下
+          4. 运行 `WeChatRecorder.exe`
+          
+          ### ✨ 新功能
+          - 显示录音时长和文件大小
+          - 支持手动录音
+          - 优化的用户界面
+          - 可直接打开录音文件所在文件夹
+          
+          ### ⚠️ 注意事项
+          - 需要 Windows Vista 或更高版本
+          - 必须安装包含 libmp3lame 的 FFmpeg
+          
+        draft: false
+        prerelease: false
+        
+    - name: Upload Release Asset
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GIT_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./WeChatRecorder-Release.zip
+        asset_name: WeChatRecorder-Release.zip
+        asset_content_type: application/zip
+        
+    - name: Upload EXE
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GIT_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./x64/Release/WeChatRecorder.exe
+        asset_name: WeChatRecorder.exe
+        asset_content_type: application/octet-stream

@@ -4,52 +4,44 @@ name: Auto Tag, Build and Release
 # 触发条件：
 # 1. 向main分支推代码 → 触发自动打标签
 # 2. 推送v*格式标签 → 触发构建和Release发布（自动打标签后会自动触发此规则）
-# 3. 手动触发 → 可按需运行打标签/构建发布
+# 3. 手动触发 → 可按需运行
 on:
   push:
-    branches: [main]          # 推main分支：仅运行【自动打标签】job
-    tags: ['v*']              # 推v*标签：仅运行【构建发布】job
-    tags-ignore: ['v*']       # 排除标签推送对分支的触发，避免循环
-  workflow_dispatch:          # 手动触发：可选择运行任意job（默认全运行）
+    branches: [main]          
+    tags: ['v*']              
+    tags-ignore: ['v*']       
+  workflow_dispatch:          
 
-# 全局权限配置：解决403错误，赋予GITHUB_TOKEN必要的写权限
-# contents: write → 允许创建标签、推送标签、创建Release、上传资产
-# pull-requests: read → 规范配置，非必须
+# 全局权限配置：解决403，赋予写标签/Release权限
 permissions:
   contents: write
   pull-requests: read
 
 jobs:
-  # Job1：自动打v*语义化标签（仅推main分支时运行，标签推送后自动触发Job2）
+  # Job1：自动打v*语义化标签（仅推main分支时运行）
   auto-tag:
-    # 条件控制：仅当触发源是【推main分支】时运行，推标签/手动触发不运行
     if: github.ref_type == 'branch' && github.ref_name == 'main'
     runs-on: ubuntu-latest
     steps:
-      - name: 拉取仓库代码（需拉取所有提交记录，用于版本判断）
+      - name: 拉取仓库代码（需拉取所有提交记录）
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # 必须设为0，否则无法获取历史提交判断版本升级
+          fetch-depth: 0  
 
       - name: 自动生成v*格式语义化标签
         uses: anothrNick/github-tag-action@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GIT_TOKEN }}  # 用GitHub内置令牌，无需手动创建GIT_TOKEN
-          DEFAULT_BUMP: patch                        # 默认补丁更新（v0.0.1→v0.0.2）
-          TAG_PREFIX: v                              # 固定标签前缀为v，和构建发布的触发规则匹配
-          RELEASE_BRANCHES: main                     # 仅在main分支触发自动打标签
-          VERBOSE: true                              # 输出详细日志，方便排查问题
-          # 提交信息关键字对应版本升级（行业语义化规范，无需修改）
-          # feat: xxx → minor小版本（v0.0.1→v0.1.0）
-          # fix!/BREAKING CHANGE → major大版本（v0.1.0→v1.0.0）
-          # 其他（fix:/docs:/ci:）→ patch补丁版本
+          GITHUB_TOKEN: ${{ secrets.GIT_TOKEN }}
+          DEFAULT_BUMP: patch                        
+          TAG_PREFIX: v                              
+          RELEASE_BRANCHES: main                     
+          VERBOSE: true                              
 
-  # Job2：构建项目并发布Release（仅推送v*标签时运行，自动打标签后会自动触发）
+  # Job2：构建项目并发布Release（仅推送v*标签时运行）
   build-release:
-    # 条件控制：仅当触发源是【推v*标签】时运行，推分支/手动触发可按需取消
     if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
     runs-on: windows-latest
-    needs: []  # 不依赖auto-tag，因为标签推送是独立触发，避免手动打标签时等待
+    needs: []  
     steps:
       - name: 拉取代码
         uses: actions/checkout@v4
@@ -77,14 +69,13 @@ jobs:
         run: Compress-Archive -Path release-package\* -DestinationPath WeChatRecorder-Release.zip
         shell: powershell
 
-      - name: 创建GitHub Release
-        id: create_release
-        uses: actions/create-release@v1
+      # 【核心修改：替换为新版Action，合并创建Release+上传所有资产，解决draft/prerelease报错】
+      - name: 创建Release并上传ZIP/EXE资产
+        uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GIT_TOKEN }}
         with:
-          tag_name: ${{ github.ref_name }}  # 修复：用纯标签名（如v0.0.1），替代带路径的github.ref
-          release_name: Release ${{ github.ref_name }}  # 发布名称，如Release v0.0.1
+          name: Release ${{ github.ref_name }}  # 发布名称，如Release v0.0.1
           body: |
             ## WeChatRecorder - 微信录音自动拾音工具
             
@@ -103,25 +94,9 @@ jobs:
             ### ⚠️ 注意事项
             - 适用系统：Windows Vista 及以上版本
             - 必须安装包含 libmp3lame 编码器的 FFmpeg
-        draft: false
-        prerelease: false
-
-      - name: 上传ZIP压缩包到Release
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GIT_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./WeChatRecorder-Release.zip
-          asset_name: WeChatRecorder-Release.zip
-          asset_content_type: application/zip
-
-      - name: 上传单独的EXE文件到Release
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GIT_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./x64/Release/WeChatRecorder.exe
-          asset_name: WeChatRecorder.exe
-          asset_content_type: application/octet-stream
+          draft: false  # 直接平级写，无格式报错
+          prerelease: false  # 直接平级写，无格式报错
+          # 一次性上传所有需要的资产，无需多次调用Action
+          files:
+            - WeChatRecorder-Release.zip
+            - x64/Release/WeChatRecorder.exe

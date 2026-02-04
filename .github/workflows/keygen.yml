@@ -42,13 +42,65 @@ jobs:
       with:
         fetch-depth: 0
         
-    - name: Setup MSBuild
+    - name: Add MSBuild to PATH
       uses: microsoft/setup-msbuild@v2
       with:
         vs-version: latest
         
     - name: Setup NuGet
       uses: NuGet/setup-nuget@v2
+      
+    - name: Setup Visual Studio Developer Environment
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: ${{ matrix.platform }}
+        
+    - name: Detect and Configure Windows SDK
+      id: sdk_setup
+      run: |
+        # 查找已安装的 Windows SDK
+        $sdkPath = "C:\Program Files (x86)\Windows Kits\10\Include"
+        $availableSDKs = @()
+        
+        if (Test-Path $sdkPath) {
+          $availableSDKs = Get-ChildItem $sdkPath -Directory | 
+                          Sort-Object Name -Descending | 
+                          Select-Object -ExpandProperty Name
+        }
+        
+        if ($availableSDKs.Count -eq 0) {
+          Write-Error "No Windows SDK found!"
+          exit 1
+        }
+        
+        $latestSDK = $availableSDKs[0]
+        Write-Host "✓ Found Windows SDK versions:" -ForegroundColor Green
+        $availableSDKs | ForEach-Object { Write-Host "  - $_" }
+        Write-Host "`n✓ Using latest SDK: $latestSDK" -ForegroundColor Green
+        
+        echo "SDK_VERSION=$latestSDK" >> $env:GITHUB_OUTPUT
+        echo "WINDOWS_SDK_VERSION=$latestSDK" >> $env:GITHUB_ENV
+      shell: pwsh
+      
+    - name: Update project files to use available SDK
+      run: |
+        # 更新 .vcxproj 文件中的 WindowsTargetPlatformVersion
+        $projectFile = "WeChatRecorder\WeChatRecorder.vcxproj"
+        
+        if (Test-Path $projectFile) {
+          $content = Get-Content $projectFile -Raw
+          
+          # 替换 WindowsTargetPlatformVersion
+          $newContent = $content -replace '<WindowsTargetPlatformVersion>[\d\.]+</WindowsTargetPlatformVersion>', 
+                                         "<WindowsTargetPlatformVersion>${{ steps.sdk_setup.outputs.SDK_VERSION }}</WindowsTargetPlatformVersion>"
+          
+          $newContent | Set-Content $projectFile -NoNewline
+          
+          Write-Host "✓ Updated project file to use SDK: ${{ steps.sdk_setup.outputs.SDK_VERSION }}" -ForegroundColor Green
+        } else {
+          Write-Warning "Project file not found at: $projectFile"
+        }
+      shell: pwsh
       
     - name: Restore NuGet packages
       run: nuget restore ${{ env.SOLUTION_FILE }}
@@ -84,54 +136,84 @@ jobs:
           $platform = "Win32"
         }
         
+        Write-Host "===== Build Configuration =====" -ForegroundColor Cyan
+        Write-Host "Configuration: ${{ matrix.configuration }}"
+        Write-Host "Platform: $platform"
+        Write-Host "Windows SDK: ${{ steps.sdk_setup.outputs.SDK_VERSION }}"
+        Write-Host "Solution: ${{ env.SOLUTION_FILE }}"
+        Write-Host "===============================" -ForegroundColor Cyan
+        
         msbuild ${{ env.SOLUTION_FILE }} `
           /p:Configuration=${{ matrix.configuration }} `
           /p:Platform=$platform `
+          /p:WindowsTargetPlatformVersion=${{ steps.sdk_setup.outputs.SDK_VERSION }} `
+          /p:PlatformToolset=v143 `
           /m `
-          /v:minimal `
-          /p:UseEnv=true
+          /v:minimal
+        
+        if ($LASTEXITCODE -ne 0) {
+          Write-Error "Build failed with exit code $LASTEXITCODE"
+          exit $LASTEXITCODE
+        }
+        
+        Write-Host "`n✓ Build completed successfully!" -ForegroundColor Green
       shell: pwsh
       
     - name: Locate and verify build output
       id: locate_output
       run: |
         # 查找生成的 EXE 文件
-        $platform = "${{ matrix.platform }}"
         $config = "${{ matrix.configuration }}"
         
-        # MSBuild 默认输出路径
+        # 可能的输出路径（按优先级）
         $possiblePaths = @(
-          "${{ matrix.platform }}\${{ matrix.configuration }}\${{ env.PROJECT_NAME }}.exe",
-          "WeChatRecorder\${{ matrix.platform }}\${{ matrix.configuration }}\${{ env.PROJECT_NAME }}.exe",
-          "WeChatRecorder\Win32\${{ matrix.configuration }}\${{ env.PROJECT_NAME }}.exe",
-          "WeChatRecorder\x64\${{ matrix.configuration }}\${{ env.PROJECT_NAME }}.exe"
+          "WeChatRecorder\x64\$config\${{ env.PROJECT_NAME }}.exe",
+          "WeChatRecorder\Win32\$config\${{ env.PROJECT_NAME }}.exe",
+          "WeChatRecorder\${{ matrix.platform }}\$config\${{ env.PROJECT_NAME }}.exe",
+          "x64\$config\${{ env.PROJECT_NAME }}.exe",
+          "Win32\$config\${{ env.PROJECT_NAME }}.exe",
+          "${{ matrix.platform }}\$config\${{ env.PROJECT_NAME }}.exe"
         )
+        
+        Write-Host "Searching for build output..." -ForegroundColor Yellow
         
         $exePath = $null
         foreach ($path in $possiblePaths) {
+          Write-Host "  Checking: $path"
           if (Test-Path $path) {
             $exePath = $path
-            Write-Host "✓ Found build output at: $path" -ForegroundColor Green
+            Write-Host "  ✓ Found!" -ForegroundColor Green
             break
           }
         }
         
         if (-not $exePath) {
-          Write-Host "Build output paths checked:" -ForegroundColor Yellow
-          foreach ($path in $possiblePaths) {
-            Write-Host "  - $path (not found)"
+          Write-Host "`n✗ Build output not found in expected locations!" -ForegroundColor Red
+          Write-Host "`nSearching entire workspace..."
+          
+          $foundExes = Get-ChildItem -Path . -Filter "${{ env.PROJECT_NAME }}.exe" -Recurse -ErrorAction SilentlyContinue
+          
+          if ($foundExes) {
+            Write-Host "`nFound EXE files:"
+            $foundExes | ForEach-Object { 
+              Write-Host "  - $($_.FullName)"
+              $exePath = $_.FullName
+            }
+          } else {
+            Write-Error "No build output found anywhere!"
+            exit 1
           }
-          Write-Error "✗ Build output not found!"
-          exit 1
         }
         
         # 获取文件信息
         $fileInfo = Get-Item $exePath
+        Write-Host "`n===== Build Output =====" -ForegroundColor Green
         Write-Host "File: $exePath"
-        Write-Host "Size: $([math]::Round($fileInfo.Length / 1MB, 2)) MB"
+        Write-Host "Size: $([math]::Round($fileInfo.Length / 1KB, 2)) KB"
         Write-Host "Modified: $($fileInfo.LastWriteTime)"
+        Write-Host "========================" -ForegroundColor Green
         
-        # 保存输出路径（去掉文件名）
+        # 保存输出路径
         $outputDir = Split-Path $exePath -Parent
         echo "output_dir=$outputDir" >> $env:GITHUB_OUTPUT
         echo "exe_path=$exePath" >> $env:GITHUB_OUTPUT
@@ -146,15 +228,16 @@ jobs:
         New-Item -ItemType Directory -Force -Path $destDir | Out-Null
         
         # 复制所有构建产物
+        Write-Host "Copying build artifacts from $sourceDir to $destDir"
         Copy-Item -Path "$sourceDir\*" -Destination $destDir -Recurse -Force
         
-        Write-Host "Copied build artifacts from $sourceDir to $destDir"
-        
         # 列出文件
-        Write-Host "`nBuild artifacts:"
+        Write-Host "`n===== Build Artifacts =====" -ForegroundColor Cyan
         Get-ChildItem $destDir -File | ForEach-Object {
-          Write-Host "  - $($_.Name) ($([math]::Round($_.Length / 1KB, 2)) KB)"
+          $sizeKB = [math]::Round($_.Length / 1KB, 2)
+          Write-Host "  ✓ $($_.Name) ($sizeKB KB)"
         }
+        Write-Host "===========================" -ForegroundColor Cyan
       shell: pwsh
       
     - name: Create build metadata
@@ -169,13 +252,14 @@ jobs:
           "branch": "${{ github.ref_name }}",
           "platform": "${{ matrix.platform }}",
           "configuration": "${{ matrix.configuration }}",
+          "windows_sdk": "${{ steps.sdk_setup.outputs.SDK_VERSION }}",
           "build_date": "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')",
           "workflow_run": "${{ github.run_number }}",
           "triggered_by": "${{ github.actor }}"
         }
         "@
         
-        $metadata | Out-File -FilePath "$buildPath\build-metadata.json"
+        $metadata | Out-File -FilePath "$buildPath\build-metadata.json" -Encoding UTF8
         
         $readmeContent = @"
         # ${{ env.PROJECT_NAME }} Build
@@ -185,6 +269,7 @@ jobs:
         **Branch:** ${{ github.ref_name }}  
         **Platform:** ${{ matrix.platform }}  
         **Configuration:** ${{ matrix.configuration }}  
+        **Windows SDK:** ${{ steps.sdk_setup.outputs.SDK_VERSION }}  
         **Build Date:** $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')  
         
         ## Commit Message
@@ -194,6 +279,7 @@ jobs:
         - Workflow Run: #${{ github.run_number }}
         - Triggered by: ${{ github.actor }}
         - Runner OS: Windows
+        - Platform Toolset: v143 (Visual Studio 2022)
         
         ## Files Included
         "@ 
@@ -202,7 +288,7 @@ jobs:
           $readmeContent += "`n- $($_.Name) ($([math]::Round($_.Length / 1KB, 2)) KB)"
         }
         
-        $readmeContent | Out-File -FilePath "$buildPath\README.md"
+        $readmeContent | Out-File -FilePath "$buildPath\README.md" -Encoding UTF8
       shell: pwsh
       
     - name: Cache build artifacts
@@ -257,23 +343,27 @@ jobs:
       run: |
         $version = "${{ steps.version.outputs.version }}"
         
+        Write-Host "===== Creating Release Packages =====" -ForegroundColor Cyan
+        
         # 为每个平台创建压缩包
         Get-ChildItem artifacts -Directory | ForEach-Object {
           $artifactName = $_.Name
           $zipName = "$artifactName.zip"
           
           Compress-Archive -Path "$($_.FullName)\*" -DestinationPath $zipName -Force
-          Write-Host "Created: $zipName"
+          
+          $zipSize = [math]::Round((Get-Item $zipName).Length / 1MB, 2)
+          Write-Host "  ✓ Created: $zipName ($zipSize MB)" -ForegroundColor Green
         }
         
         # 创建完整包
         $fullPackageName = "${{ env.PROJECT_NAME }}-Complete-v$version.zip"
         Compress-Archive -Path "artifacts\*" -DestinationPath $fullPackageName -Force
         
-        Write-Host "`nCreated packages:"
-        Get-ChildItem *.zip | ForEach-Object {
-          Write-Host "  - $($_.Name) ($([math]::Round($_.Length / 1MB, 2)) MB)"
-        }
+        $fullSize = [math]::Round((Get-Item $fullPackageName).Length / 1MB, 2)
+        Write-Host "  ✓ Created: $fullPackageName ($fullSize MB)" -ForegroundColor Green
+        
+        Write-Host "=====================================" -ForegroundColor Cyan
       shell: pwsh
       
     - name: Upload release packages
@@ -334,6 +424,10 @@ jobs:
           ### Requirements
           - Windows 7 or later
           - Visual C++ Redistributable (included in package)
+          
+          ### Build Information
+          - Built with Visual Studio 2022 (v143)
+          - Compatible with latest Windows SDK
         files: |
           release-packages/*.zip
         draft: false

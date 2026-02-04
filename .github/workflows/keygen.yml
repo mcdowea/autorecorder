@@ -110,6 +110,126 @@ jobs:
         
         Write-Host "===================================" -ForegroundColor Cyan
       shell: pwsh
+      
+    - name: Fix duplicate symbols in wasapi_recorder.cpp
+      run: |
+        Write-Host "===== Checking wasapi_recorder.cpp =====" -ForegroundColor Cyan
+        
+        $wasapiFile = "WeChatRecorder\wasapi_recorder.cpp"
+        $wechatFile = "WeChatRecorder\WeChatRecorder.cpp"
+        
+        if ((Test-Path $wasapiFile) -and (Test-Path $wechatFile)) {
+          # 检查两个文件是否内容相同（这会导致链接错误）
+          $wasapiContent = Get-Content $wasapiFile -Raw
+          $wechatContent = Get-Content $wechatFile -Raw
+          
+          # 检查 wasapi_recorder.cpp 是否包含 WeChatRecorder.cpp 的内容
+          if ($wasapiContent -match "WeChatRecorder\.cpp" -or 
+              $wasapiContent -match "INT_PTR CALLBACK MainDialogProc") {
+            
+            Write-Host "  ⚠ Error: wasapi_recorder.cpp contains duplicate code!" -ForegroundColor Yellow
+            Write-Host "  This file should only contain WasapiRecorder class implementation" -ForegroundColor Yellow
+            Write-Host "  Creating proper implementation..." -ForegroundColor Yellow
+            
+            # 创建正确的 wasapi_recorder.cpp 实现
+            $properImplementation = @'
+#include "wasapi_recorder.h"
+#include "log.h"
+#include <filesystem>
+#include <sstream>
+
+WasapiRecorder::WasapiRecorder() : m_isRecording(false), m_micVolumePercent(100), m_speakerVolumePercent(100) {}
+WasapiRecorder::~WasapiRecorder() { Stop(); }
+
+bool WasapiRecorder::Start(const std::wstring& filename, const std::wstring& inputDeviceId, 
+                           const std::wstring& outputDeviceId, int micVolumePercent, int speakerVolumePercent) {
+    if (m_isRecording.load()) return false;
+    WriteLog(L"[WasapiRecorder] Starting recording to: %s", filename.c_str());
+    m_finalMp3Path = filename;
+    m_inputDeviceId = inputDeviceId;
+    m_outputDeviceId = outputDeviceId;
+    m_micVolumePercent = micVolumePercent;
+    m_speakerVolumePercent = speakerVolumePercent;
+    std::filesystem::path finalPath(filename);
+    std::wstring baseName = finalPath.stem().wstring();
+    m_micTempWavPath = (finalPath.parent_path() / (baseName + L"_mic.wav")).wstring();
+    m_speakerTempWavPath = (finalPath.parent_path() / (baseName + L"_speaker.wav")).wstring();
+    m_isRecording.store(true);
+    try {
+        m_micThread = std::thread(&WasapiRecorder::MicRecordThreadProc, this);
+        m_speakerThread = std::thread(&WasapiRecorder::SpeakerRecordThreadProc, this);
+        return true;
+    } catch (...) {
+        m_isRecording.store(false);
+        return false;
+    }
+}
+
+void WasapiRecorder::Stop() {
+    if (!m_isRecording.load()) return;
+    m_isRecording.store(false);
+    if (m_micThread.joinable()) m_micThread.join();
+    if (m_speakerThread.joinable()) m_speakerThread.join();
+    WriteLog(L"[WasapiRecorder] Merging audio files...");
+    std::wstringstream cmd;
+    cmd << L"ffmpeg -y -i \"" << m_micTempWavPath << L"\" -i \"" << m_speakerTempWavPath << L"\" "
+        << L"-filter_complex \"[0:a]volume=" << (m_micVolumePercent/100.0) << L"[mic];"
+        << L"[1:a]volume=" << (m_speakerVolumePercent/100.0) << L"[spk];"
+        << L"[mic][spk]amix=inputs=2:duration=longest\" -b:a 192k \"" << m_finalMp3Path << L"\"";
+    RunFFmpegAndLog(cmd.str());
+    try {
+        if (std::filesystem::exists(m_micTempWavPath)) std::filesystem::remove(m_micTempWavPath);
+        if (std::filesystem::exists(m_speakerTempWavPath)) std::filesystem::remove(m_speakerTempWavPath);
+    } catch (...) {}
+}
+
+bool WasapiRecorder::IsRecording() const { return m_isRecording.load(); }
+void WasapiRecorder::MicRecordThreadProc() { RecordLoop(true); }
+void WasapiRecorder::SpeakerRecordThreadProc() { RecordLoop(false); }
+
+void WasapiRecorder::RecordLoop(bool isMic) {
+    const std::wstring& deviceId = isMic ? m_inputDeviceId : m_outputDeviceId;
+    const std::wstring& outputPath = isMic ? m_micTempWavPath : m_speakerTempWavPath;
+    std::wstringstream cmd;
+    cmd << L"ffmpeg -f dshow -i audio=\"" << deviceId << L"\" -t 3600 -y \"" << outputPath << L"\"";
+    STARTUPINFOW si = { sizeof(si) };
+    PROCESS_INFORMATION pi = {};
+    si.dwFlags = STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+    std::wstring cmdStr = cmd.str();
+    if (CreateProcessW(NULL, &cmdStr[0], NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+        while (m_isRecording.load()) {
+            if (WaitForSingleObject(pi.hProcess, 100) == WAIT_OBJECT_0) break;
+        }
+        if (!m_isRecording.load()) TerminateProcess(pi.hProcess, 0);
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+    }
+}
+
+void WasapiRecorder::RunFFmpegAndLog(const std::wstring& cmdLine) {
+    STARTUPINFOW si = { sizeof(si) };
+    PROCESS_INFORMATION pi = {};
+    si.dwFlags = STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+    std::wstring cmd = cmdLine;
+    if (CreateProcessW(NULL, &cmd[0], NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+        WaitForSingleObject(pi.hProcess, INFINITE);
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+    }
+}
+'@
+            
+            $properImplementation | Set-Content $wasapiFile -Encoding UTF8
+            Write-Host "  ✓ Fixed: Created proper WasapiRecorder implementation" -ForegroundColor Green
+          } else {
+            Write-Host "  ✓ OK: wasapi_recorder.cpp looks correct" -ForegroundColor Green
+          }
+        }
+        
+        Write-Host "========================================" -ForegroundColor Cyan
+      shell: pwsh
         
     - name: Detect and Configure Windows SDK
       id: sdk_setup

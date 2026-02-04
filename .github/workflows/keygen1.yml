@@ -34,7 +34,7 @@ jobs:
       - name: 自动生成v*格式语义化标签
         uses: anothrNick/github-tag-action@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # 用GitHub内置令牌，无需手动创建GIT_TOKEN
+          GITHUB_TOKEN: ${{ secrets.GIT_TOKEN }}  # 用GitHub内置令牌，无需手动创建GIT_TOKEN
           DEFAULT_BUMP: patch                        # 默认补丁更新（v0.0.1→v0.0.2）
           TAG_PREFIX: v                              # 固定标签前缀为v，和构建发布的触发规则匹配
           RELEASE_BRANCHES: main                     # 仅在main分支触发自动打标签
@@ -81,7 +81,7 @@ jobs:
         id: create_release
         uses: actions/create-release@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GIT_TOKEN }}
         with:
           tag_name: ${{ github.ref_name }}  # 修复：用纯标签名（如v0.0.1），替代带路径的github.ref
           release_name: Release ${{ github.ref_name }}  # 发布名称，如Release v0.0.1
@@ -109,7 +109,7 @@ jobs:
       - name: 上传ZIP压缩包到Release
         uses: actions/upload-release-asset@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GIT_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: ./WeChatRecorder-Release.zip
@@ -119,7 +119,7 @@ jobs:
       - name: 上传单独的EXE文件到Release
         uses: actions/upload-release-asset@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GIT_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: ./x64/Release/WeChatRecorder.exe

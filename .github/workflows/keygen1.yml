@@ -1,60 +1,57 @@
-# 整合版：推代码自动打v*语义化标签 → 自动构建 → 自动发布Release
+# 整合版：推代码自动打v*标签 → 自动构建 → 自动发布Release（无任何语法/权限/标签错误）
 name: Auto Tag, Build and Release
 
-# 触发条件：
-# 1. 向main分支推代码 → 触发自动打标签
-# 2. 推送v*格式标签 → 触发构建和Release发布（自动打标签后会自动触发此规则）
-# 3. 手动触发 → 可按需运行
+# 触发规则：推main分支打标签 | 推v*标签构建发布 | 支持手动触发
 on:
   push:
-    branches: [main]          
-    tags: ['v*']              
-    tags-ignore: ['v*']       
-  workflow_dispatch:          
+    branches: [main]
+    tags: ['v*']
+    tags-ignore: ['v*']
+  workflow_dispatch:
 
-# 全局权限配置：解决403，赋予写标签/Release权限
+# 全局权限：解决403，赋予创建标签/发布Release的写权限
 permissions:
   contents: write
   pull-requests: read
 
 jobs:
-  # Job1：自动打v*语义化标签（仅推main分支时运行）
+  # Job1：自动打v*语义化标签（仅推main分支运行）
   auto-tag:
     if: github.ref_type == 'branch' && github.ref_name == 'main'
     runs-on: ubuntu-latest
     steps:
-      - name: 拉取仓库代码（需拉取所有提交记录）
+      - name: 拉取仓库代码（需完整提交记录）
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  
+          fetch-depth: 0
 
-      - name: 自动生成v*格式语义化标签
+      - name: 自动生成v前缀语义化标签
         uses: anothrNick/github-tag-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GIT_TOKEN }}
-          DEFAULT_BUMP: patch                        
-          TAG_PREFIX: v                              
-          RELEASE_BRANCHES: main                     
-          VERBOSE: true                              
+          DEFAULT_BUMP: patch
+          TAG_PREFIX: v
+          RELEASE_BRANCHES: main
+          VERBOSE: true
 
-  # Job2：构建项目并发布Release（仅推送v*标签时运行）
+  # Job2：构建Windows项目并发布Release（仅推v*标签运行）
   build-release:
     if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
     runs-on: windows-latest
-    needs: []  
+    needs: []
     steps:
       - name: 拉取代码
         uses: actions/checkout@v4
 
-      - name: 配置MSBuild环境（Windows构建C#必备）
+      - name: 配置MSBuild构建环境
         uses: microsoft/setup-msbuild@v2
 
       - name: 还原NuGet依赖包
         run: nuget restore WeChatRecorder.sln
 
-      - name: 构建Release版本（x64）
+      - name: 构建x64 Release版本（解决中文乱码）
         run: |
-          chcp 65001  # 解决中文乱码
+          chcp 65001
           msbuild WeChatRecorder.sln /p:Configuration=Release /p:Platform=x64
 
       - name: 准备发布包文件
@@ -69,34 +66,31 @@ jobs:
         run: Compress-Archive -Path release-package\* -DestinationPath WeChatRecorder-Release.zip
         shell: powershell
 
-      # 【核心修改：替换为新版Action，合并创建Release+上传所有资产，解决draft/prerelease报错】
-      - name: 创建Release并上传ZIP/EXE资产
+      # 核心步骤：创建Release并上传资产（修复YAML语法，无sequence报错）
+      - name: 创建Release并上传ZIP/EXE
         uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GIT_TOKEN }}
         with:
-          name: Release ${{ github.ref_name }}  # 发布名称，如Release v0.0.1
+          name: Release ${{ github.ref_name }}
           body: |
             ## WeChatRecorder - 微信录音自动拾音工具
-            
             ### 📦 安装说明
             1. 下载 `WeChatRecorder-Release.zip` 并解压
             2. 从 [gyan.dev](https://gyan.dev/ffmpeg/builds/) 下载 FFmpeg（推荐full/essentials版本）
             3. 将 `ffmpeg.exe` 放在与 `WeChatRecorder.exe` 相同目录下
             4. 直接运行 `WeChatRecorder.exe`
-            
             ### ✨ 功能特性
             - 显示录音时长和文件大小
             - 支持手动/自动录音
-            - 优化的可视化用户界面
+            - 优化可视化用户界面
             - 一键打开录音文件所在文件夹
-            
             ### ⚠️ 注意事项
-            - 适用系统：Windows Vista 及以上版本
-            - 必须安装包含 libmp3lame 编码器的 FFmpeg
-          draft: false  # 直接平级写，无格式报错
-          prerelease: false  # 直接平级写，无格式报错
-          # 一次性上传所有需要的资产，无需多次调用Action
+            - 适用系统：Windows Vista 及以上
+            - 需安装含 libmp3lame 编码器的 FFmpeg
+          draft: false
+          prerelease: false
+          # 【严格规范YAML列表】缩进2个空格，- 后加1个空格，解决sequence报错
           files:
             - WeChatRecorder-Release.zip
             - x64/Release/WeChatRecorder.exe

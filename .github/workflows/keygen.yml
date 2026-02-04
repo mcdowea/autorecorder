@@ -29,11 +29,11 @@ jobs:
     
     strategy:
       matrix:
-        platform: [x64, x86]
+        platform: [x64, Win32]
         configuration: [Release, Debug]
         exclude:
-          # 排除 x86 Debug 以节省时间
-          - platform: x86
+          # 排除 Win32 Debug 以节省时间
+          - platform: Win32
             configuration: Debug
     
     steps:
@@ -81,6 +81,34 @@ jobs:
         }
         
         Write-Host "=============================================" -ForegroundColor Cyan
+      shell: pwsh
+      
+    - name: Fix solution file platform mismatch
+      run: |
+        Write-Host "===== Checking Solution File =====" -ForegroundColor Cyan
+        
+        $solutionFile = "${{ env.SOLUTION_FILE }}"
+        if (Test-Path $solutionFile) {
+          $content = Get-Content $solutionFile -Raw
+          
+          # 检查是否使用了 x86 而不是 Win32
+          if ($content -match "x86") {
+            Write-Host "  ⚠ Fixing: Solution file uses 'x86' instead of 'Win32'" -ForegroundColor Yellow
+            
+            # 替换 x86 为 Win32（保持正确的映射）
+            $content = $content -replace '\|x86 =', '|Win32 ='
+            $content = $content -replace '\.x86\.', '.Win32.'
+            
+            # 保存修复后的文件
+            $content | Set-Content $solutionFile -NoNewline
+            
+            Write-Host "  ✓ Fixed: Platform references updated to Win32" -ForegroundColor Green
+          } else {
+            Write-Host "  ✓ OK: Solution file platform is correct" -ForegroundColor Green
+          }
+        }
+        
+        Write-Host "===================================" -ForegroundColor Cyan
       shell: pwsh
         
     - name: Detect and Configure Windows SDK
@@ -160,22 +188,16 @@ jobs:
       
     - name: Build solution
       run: |
-        # 将 x86 映射到 Win32（MSBuild 标准）
-        $platform = "${{ matrix.platform }}"
-        if ($platform -eq "x86") {
-          $platform = "Win32"
-        }
-        
         Write-Host "===== Build Configuration =====" -ForegroundColor Cyan
         Write-Host "Configuration: ${{ matrix.configuration }}"
-        Write-Host "Platform: $platform"
+        Write-Host "Platform: ${{ matrix.platform }}"
         Write-Host "Windows SDK: ${{ steps.sdk_setup.outputs.SDK_VERSION }}"
         Write-Host "Solution: ${{ env.SOLUTION_FILE }}"
         Write-Host "===============================" -ForegroundColor Cyan
         
         msbuild ${{ env.SOLUTION_FILE }} `
           /p:Configuration=${{ matrix.configuration }} `
-          /p:Platform=$platform `
+          /p:Platform=${{ matrix.platform }} `
           /p:WindowsTargetPlatformVersion=${{ steps.sdk_setup.outputs.SDK_VERSION }} `
           /p:PlatformToolset=v143 `
           /m `
@@ -197,18 +219,26 @@ jobs:
       run: |
         # 查找生成的 EXE 文件
         $config = "${{ matrix.configuration }}"
+        $platform = "${{ matrix.platform }}"
         
         # 可能的输出路径（按优先级）
+        # 注意：项目文件可能使用 Win32 作为输出目录，即使解决方案使用 x86
         $possiblePaths = @(
-          "WeChatRecorder\x64\$config\${{ env.PROJECT_NAME }}.exe",
+          "WeChatRecorder\$platform\$config\${{ env.PROJECT_NAME }}.exe",
           "WeChatRecorder\Win32\$config\${{ env.PROJECT_NAME }}.exe",
-          "WeChatRecorder\${{ matrix.platform }}\$config\${{ env.PROJECT_NAME }}.exe",
-          "x64\$config\${{ env.PROJECT_NAME }}.exe",
+          "WeChatRecorder\x64\$config\${{ env.PROJECT_NAME }}.exe",
+          "WeChatRecorder\x86\$config\${{ env.PROJECT_NAME }}.exe",
+          "$platform\$config\${{ env.PROJECT_NAME }}.exe",
           "Win32\$config\${{ env.PROJECT_NAME }}.exe",
-          "${{ matrix.platform }}\$config\${{ env.PROJECT_NAME }}.exe"
+          "x64\$config\${{ env.PROJECT_NAME }}.exe",
+          "x86\$config\${{ env.PROJECT_NAME }}.exe"
         )
         
         Write-Host "===== Searching for Build Output =====" -ForegroundColor Yellow
+        Write-Host "Looking for: ${{ env.PROJECT_NAME }}.exe"
+        Write-Host "Platform: $platform"
+        Write-Host "Configuration: $config"
+        Write-Host ""
         
         $exePath = $null
         foreach ($path in $possiblePaths) {

@@ -28,7 +28,7 @@ jobs:
         uses: anothrNick/github-tag-action@v1
         env:
           # 使用GitHub内置令牌，无需手动配置
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GIT_TOKEN }}
           # 标签前缀：固定为v，生成v1.0.0、v2.0.1格式（必须和Release Workflow匹配）
           DEFAULT_BUMP: patch # 默认升级类型：patch（补丁更新，如v2.0.0→v2.0.1）
           # 以下是提交信息关键字，触发对应版本升级（可自定义）

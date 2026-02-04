@@ -22,8 +22,8 @@ jobs:
       
     - name: Build Solution
       run: |
-      chcp 65001
-      msbuild WeChatRecorder.sln /p:Configuration=Release /p:Platform=x64
+        chcp 65001
+        msbuild WeChatRecorder.sln /p:Configuration=Release /p:Platform=x64
       
     - name: Create Release Package
       run: |

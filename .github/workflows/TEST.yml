@@ -31,17 +31,12 @@ jobs:
           msbuild-architecture: x64  # 适配x64编译
           visualstudio-version: 2022  # 指定VS2022
 
-      # 步骤3：编译项目（核心：解决编码问题+MSBuild编译x64 Release）
+      # 步骤3：编译项目（修复PowerShell语法，去掉^续行，单行写全参数）
       - name: Build with MSBuild
         run: |
           chcp 65001  # 切换Runner编码为UTF-8，解决中文C4566警告
-          # 编译sln，指定配置Release、平台x64，输出编译日志方便排错
-          msbuild "autorecorder/WeChatRecorder.sln" ^
-            /p:Configuration=Release ^
-            /p:Platform=x64 ^
-            /p:CharacterSet=Unicode ^  # 强制Unicode字符集，适配MessageBoxW
-            /p:AdditionalOptions=/utf-8 ^  # 传递/utf-8编译开关，根治中文编码
-            /m /v:m  # /m多线程编译加快速度，/v:m简化日志（可改为/v:d看详细日志）
+          # PowerShell单行写法：无续行符，所有参数跟在msbuild后，直接执行
+          msbuild "autorecorder/WeChatRecorder.sln" /p:Configuration=Release /p:Platform=x64 /p:CharacterSet=Unicode /p:AdditionalOptions=/utf-8 /m /v:m
 
       # 步骤4：整理编译产物（只保留可执行文件，剔除中间文件，方便打包）
       - name: Prepare release artifacts

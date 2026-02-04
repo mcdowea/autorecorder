@@ -55,6 +55,34 @@ jobs:
       with:
         arch: ${{ matrix.platform }}
         
+    - name: Fix resource files encoding issues
+      run: |
+        Write-Host "===== Checking and Fixing Resource Files =====" -ForegroundColor Cyan
+        
+        # 查找所有 .h 和 .rc 文件
+        $filesToCheck = Get-ChildItem -Path "WeChatRecorder" -Include "*.h","*.rc" -Recurse
+        
+        foreach ($file in $filesToCheck) {
+          # 检查文件是否以换行符结束
+          $content = Get-Content $file.FullName -Raw
+          
+          if ($content -and -not $content.EndsWith("`n")) {
+            Write-Host "  ⚠ Fixing: $($file.Name) (missing final newline)" -ForegroundColor Yellow
+            
+            # 添加最后的换行符
+            Add-Content -Path $file.FullName -Value "" -NoNewline
+            $content = $content + "`n"
+            Set-Content -Path $file.FullName -Value $content -NoNewline
+            
+            Write-Host "  ✓ Fixed: $($file.Name)" -ForegroundColor Green
+          } else {
+            Write-Host "  ✓ OK: $($file.Name)" -ForegroundColor Green
+          }
+        }
+        
+        Write-Host "=============================================" -ForegroundColor Cyan
+      shell: pwsh
+        
     - name: Detect and Configure Windows SDK
       id: sdk_setup
       run: |
@@ -74,9 +102,11 @@ jobs:
         }
         
         $latestSDK = $availableSDKs[0]
-        Write-Host "✓ Found Windows SDK versions:" -ForegroundColor Green
+        Write-Host "===== Windows SDK Detection =====" -ForegroundColor Cyan
+        Write-Host "Available SDK versions:" -ForegroundColor Green
         $availableSDKs | ForEach-Object { Write-Host "  - $_" }
-        Write-Host "`n✓ Using latest SDK: $latestSDK" -ForegroundColor Green
+        Write-Host "`nUsing latest SDK: $latestSDK" -ForegroundColor Green
+        Write-Host "=================================" -ForegroundColor Cyan
         
         echo "SDK_VERSION=$latestSDK" >> $env:GITHUB_OUTPUT
         echo "WINDOWS_SDK_VERSION=$latestSDK" >> $env:GITHUB_ENV
@@ -149,9 +179,12 @@ jobs:
           /p:WindowsTargetPlatformVersion=${{ steps.sdk_setup.outputs.SDK_VERSION }} `
           /p:PlatformToolset=v143 `
           /m `
-          /v:minimal
+          /v:minimal `
+          /p:UseMultiToolTask=true `
+          /p:CL_MPCount=2
         
         if ($LASTEXITCODE -ne 0) {
+          Write-Host "`n===== Build Failed =====" -ForegroundColor Red
           Write-Error "Build failed with exit code $LASTEXITCODE"
           exit $LASTEXITCODE
         }
@@ -175,7 +208,7 @@ jobs:
           "${{ matrix.platform }}\$config\${{ env.PROJECT_NAME }}.exe"
         )
         
-        Write-Host "Searching for build output..." -ForegroundColor Yellow
+        Write-Host "===== Searching for Build Output =====" -ForegroundColor Yellow
         
         $exePath = $null
         foreach ($path in $possiblePaths) {
@@ -188,19 +221,21 @@ jobs:
         }
         
         if (-not $exePath) {
-          Write-Host "`n✗ Build output not found in expected locations!" -ForegroundColor Red
-          Write-Host "`nSearching entire workspace..."
+          Write-Host "`n⚠ Build output not found in expected locations!" -ForegroundColor Yellow
+          Write-Host "Searching entire workspace..."
           
           $foundExes = Get-ChildItem -Path . -Filter "${{ env.PROJECT_NAME }}.exe" -Recurse -ErrorAction SilentlyContinue
           
           if ($foundExes) {
             Write-Host "`nFound EXE files:"
             $foundExes | ForEach-Object { 
-              Write-Host "  - $($_.FullName)"
-              $exePath = $_.FullName
+              Write-Host "  - $($_.FullName)" -ForegroundColor Cyan
+              if (-not $exePath) {
+                $exePath = $_.FullName
+              }
             }
           } else {
-            Write-Error "No build output found anywhere!"
+            Write-Error "✗ No build output found anywhere!"
             exit 1
           }
         }
@@ -228,16 +263,19 @@ jobs:
         New-Item -ItemType Directory -Force -Path $destDir | Out-Null
         
         # 复制所有构建产物
-        Write-Host "Copying build artifacts from $sourceDir to $destDir"
+        Write-Host "===== Organizing Build Artifacts =====" -ForegroundColor Cyan
+        Write-Host "Source: $sourceDir"
+        Write-Host "Destination: $destDir"
+        
         Copy-Item -Path "$sourceDir\*" -Destination $destDir -Recurse -Force
         
         # 列出文件
-        Write-Host "`n===== Build Artifacts =====" -ForegroundColor Cyan
+        Write-Host "`nBuild artifacts:"
         Get-ChildItem $destDir -File | ForEach-Object {
           $sizeKB = [math]::Round($_.Length / 1KB, 2)
-          Write-Host "  ✓ $($_.Name) ($sizeKB KB)"
+          Write-Host "  ✓ $($_.Name) ($sizeKB KB)" -ForegroundColor Green
         }
-        Write-Host "===========================" -ForegroundColor Cyan
+        Write-Host "======================================" -ForegroundColor Cyan
       shell: pwsh
       
     - name: Create build metadata
@@ -253,6 +291,7 @@ jobs:
           "platform": "${{ matrix.platform }}",
           "configuration": "${{ matrix.configuration }}",
           "windows_sdk": "${{ steps.sdk_setup.outputs.SDK_VERSION }}",
+          "platform_toolset": "v143",
           "build_date": "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')",
           "workflow_run": "${{ github.run_number }}",
           "triggered_by": "${{ github.actor }}"
@@ -423,11 +462,12 @@ jobs:
           
           ### Requirements
           - Windows 7 or later
-          - Visual C++ Redistributable (included in package)
+          - Visual C++ Redistributable (may be required)
           
           ### Build Information
           - Built with Visual Studio 2022 (v143)
           - Compatible with latest Windows SDK
+          - Built with GitHub Actions
         files: |
           release-packages/*.zip
         draft: false

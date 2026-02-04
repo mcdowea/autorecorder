@@ -20,7 +20,7 @@ on:
 
 env:
   PROJECT_NAME: WeChatRecorder
-  SOLUTION_NAME: WeChatRecorder/WeChatRecorder.vcxproj
+  SOLUTION_FILE: WeChatRecorder.sln
 
 jobs:
   build:
@@ -29,11 +29,11 @@ jobs:
     
     strategy:
       matrix:
-        platform: [x64, Win32]
+        platform: [x64, x86]
         configuration: [Release, Debug]
         exclude:
-          # 排除 Win32 Debug 以节省时间
-          - platform: Win32
+          # 排除 x86 Debug 以节省时间
+          - platform: x86
             configuration: Debug
     
     steps:
@@ -50,8 +50,8 @@ jobs:
     - name: Setup NuGet
       uses: NuGet/setup-nuget@v2
       
-    - name: Restore dependencies
-      run: nuget restore ${{ env.SOLUTION_NAME }}
+    - name: Restore NuGet packages
+      run: nuget restore ${{ env.SOLUTION_FILE }}
       
     - name: Get version information
       id: version
@@ -76,28 +76,84 @@ jobs:
         Write-Host "Commit: $commitShort"
       shell: pwsh
       
-    - name: Build project
+    - name: Build solution
       run: |
-        msbuild ${{ env.SOLUTION_NAME }} `
-          /p:Configuration=${{ matrix.configuration }} `
-          /p:Platform=${{ matrix.platform }} `
-          /p:OutDir="${{ github.workspace }}\build\${{ matrix.platform }}\${{ matrix.configuration }}\" `
-          /m `
-          /v:minimal
-      
-    - name: Verify build output
-      run: |
-        $exePath = "build\${{ matrix.platform }}\${{ matrix.configuration }}\${{ env.PROJECT_NAME }}.exe"
+        # 将 x86 映射到 Win32（MSBuild 标准）
+        $platform = "${{ matrix.platform }}"
+        if ($platform -eq "x86") {
+          $platform = "Win32"
+        }
         
-        if (Test-Path $exePath) {
-          Write-Host "✓ Build successful!" -ForegroundColor Green
-          Write-Host "File: $exePath"
-          $fileInfo = Get-Item $exePath
-          Write-Host "Size: $([math]::Round($fileInfo.Length / 1MB, 2)) MB"
-          Write-Host "Modified: $($fileInfo.LastWriteTime)"
-        } else {
-          Write-Error "✗ Build failed! EXE not found at: $exePath"
+        msbuild ${{ env.SOLUTION_FILE }} `
+          /p:Configuration=${{ matrix.configuration }} `
+          /p:Platform=$platform `
+          /m `
+          /v:minimal `
+          /p:UseEnv=true
+      shell: pwsh
+      
+    - name: Locate and verify build output
+      id: locate_output
+      run: |
+        # 查找生成的 EXE 文件
+        $platform = "${{ matrix.platform }}"
+        $config = "${{ matrix.configuration }}"
+        
+        # MSBuild 默认输出路径
+        $possiblePaths = @(
+          "${{ matrix.platform }}\${{ matrix.configuration }}\${{ env.PROJECT_NAME }}.exe",
+          "WeChatRecorder\${{ matrix.platform }}\${{ matrix.configuration }}\${{ env.PROJECT_NAME }}.exe",
+          "WeChatRecorder\Win32\${{ matrix.configuration }}\${{ env.PROJECT_NAME }}.exe",
+          "WeChatRecorder\x64\${{ matrix.configuration }}\${{ env.PROJECT_NAME }}.exe"
+        )
+        
+        $exePath = $null
+        foreach ($path in $possiblePaths) {
+          if (Test-Path $path) {
+            $exePath = $path
+            Write-Host "✓ Found build output at: $path" -ForegroundColor Green
+            break
+          }
+        }
+        
+        if (-not $exePath) {
+          Write-Host "Build output paths checked:" -ForegroundColor Yellow
+          foreach ($path in $possiblePaths) {
+            Write-Host "  - $path (not found)"
+          }
+          Write-Error "✗ Build output not found!"
           exit 1
+        }
+        
+        # 获取文件信息
+        $fileInfo = Get-Item $exePath
+        Write-Host "File: $exePath"
+        Write-Host "Size: $([math]::Round($fileInfo.Length / 1MB, 2)) MB"
+        Write-Host "Modified: $($fileInfo.LastWriteTime)"
+        
+        # 保存输出路径（去掉文件名）
+        $outputDir = Split-Path $exePath -Parent
+        echo "output_dir=$outputDir" >> $env:GITHUB_OUTPUT
+        echo "exe_path=$exePath" >> $env:GITHUB_OUTPUT
+      shell: pwsh
+      
+    - name: Organize build artifacts
+      run: |
+        $sourceDir = "${{ steps.locate_output.outputs.output_dir }}"
+        $destDir = "build\${{ matrix.platform }}\${{ matrix.configuration }}"
+        
+        # 创建目标目录
+        New-Item -ItemType Directory -Force -Path $destDir | Out-Null
+        
+        # 复制所有构建产物
+        Copy-Item -Path "$sourceDir\*" -Destination $destDir -Recurse -Force
+        
+        Write-Host "Copied build artifacts from $sourceDir to $destDir"
+        
+        # 列出文件
+        Write-Host "`nBuild artifacts:"
+        Get-ChildItem $destDir -File | ForEach-Object {
+          Write-Host "  - $($_.Name) ($([math]::Round($_.Length / 1KB, 2)) KB)"
         }
       shell: pwsh
       
@@ -267,7 +323,7 @@ jobs:
           
           ### Downloads
           - **x64 Release** - For 64-bit Windows systems (Recommended)
-          - **Win32 Release** - For 32-bit Windows systems
+          - **x86 Release** - For 32-bit Windows systems
           - **Complete Package** - All builds included
           
           ### Installation

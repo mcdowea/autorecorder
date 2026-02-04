@@ -22,8 +22,8 @@ jobs:
       
     - name: Build Solution
       run: |
-        chcp 65001
-        msbuild WeChatRecorder.sln /p:Configuration=Release /p:Platform=x64
+      chcp 65001
+      msbuild WeChatRecorder.sln /p:Configuration=Release /p:Platform=x64
       
     - name: Create Release Package
       run: |
@@ -42,7 +42,7 @@ jobs:
       id: create_release
       uses: actions/create-release@v1
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.GIT_TOKEN }}
       with:
         tag_name: ${{ github.ref }}
         release_name: Release ${{ github.ref_name }}
@@ -71,7 +71,7 @@ jobs:
     - name: Upload Release Asset
       uses: actions/upload-release-asset@v1
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.GIT_TOKEN }}
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}
         asset_path: ./WeChatRecorder-Release.zip
@@ -81,7 +81,7 @@ jobs:
     - name: Upload EXE
       uses: actions/upload-release-asset@v1
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.GIT_TOKEN }}
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}
         asset_path: ./x64/Release/WeChatRecorder.exe

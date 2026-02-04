@@ -38,10 +38,10 @@
 #define IDC_BTN_START                   1001
 #define IDC_LABEL_STATUS                1008
 #define IDC_BTN_SETTINGS                1010
-#define IDC_LABEL_DURATION              1030
-#define IDC_LABEL_FILESIZE              1031
-#define IDC_STATIC_DURATION_TITLE       1032
-#define IDC_STATIC_FILESIZE_TITLE       1033
+#define IDC_LABEL_DURATION              1028
+#define IDC_LABEL_FILESIZE              1029
+#define IDC_BTN_OPEN_FOLDER             1030
+#define IDC_BTN_MANUAL_RECORD           1031
 
 // General Page Controls
 #define IDC_SLIDER_MIC_VOL              1015
@@ -74,8 +74,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        133
 #define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         1028
+#define _APS_NEXT_CONTROL_VALUE         1032
 #define _APS_NEXT_SYMED_VALUE           110
 #endif
 #endif
-

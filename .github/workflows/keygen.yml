@@ -1,624 +1,87 @@
-name: Advanced Build and Cache
+name: Build and Release
 
 on:
   push:
-    branches: [ main, master, develop ]
     tags:
-      - 'v*'
-  pull_request:
-    branches: [ main, master ]
-  workflow_dispatch:
-    inputs:
-      build_type:
-        description: 'Build type'
-        required: true
-        default: 'Release'
-        type: choice
-        options:
-          - Debug
-          - Release
-
-env:
-  PROJECT_NAME: WeChatRecorder
-  SOLUTION_FILE: WeChatRecorder.sln
+      - 'v*'  # 当推送以v开头的标签时触发,例如 v1.0.0
+  workflow_dispatch:  # 允许手动触发
 
 jobs:
   build:
-    name: Build ${{ matrix.platform }} - ${{ matrix.configuration }}
     runs-on: windows-latest
-    
-    strategy:
-      matrix:
-        platform: [x64, Win32]
-        configuration: [Release, Debug]
-        exclude:
-          # 排除 Win32 Debug 以节省时间
-          - platform: Win32
-            configuration: Debug
-    
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-        
-    - name: Add MSBuild to PATH
-      uses: microsoft/setup-msbuild@v2
-      with:
-        vs-version: latest
-        
-    - name: Setup NuGet
-      uses: NuGet/setup-nuget@v2
-      
-    - name: Setup Visual Studio Developer Environment
-      uses: ilammy/msvc-dev-cmd@v1
-      with:
-        arch: ${{ matrix.platform }}
-        
-    - name: Fix resource files encoding issues
-      run: |
-        Write-Host "===== Checking and Fixing Resource Files =====" -ForegroundColor Cyan
-        
-        # 查找所有 .h 和 .rc 文件
-        $filesToCheck = Get-ChildItem -Path "WeChatRecorder" -Include "*.h","*.rc" -Recurse
-        
-        foreach ($file in $filesToCheck) {
-          # 检查文件是否以换行符结束
-          $content = Get-Content $file.FullName -Raw
-          
-          if ($content -and -not $content.EndsWith("`n")) {
-            Write-Host "  ⚠ Fixing: $($file.Name) (missing final newline)" -ForegroundColor Yellow
-            
-            # 添加最后的换行符
-            Add-Content -Path $file.FullName -Value "" -NoNewline
-            $content = $content + "`n"
-            Set-Content -Path $file.FullName -Value $content -NoNewline
-            
-            Write-Host "  ✓ Fixed: $($file.Name)" -ForegroundColor Green
-          } else {
-            Write-Host "  ✓ OK: $($file.Name)" -ForegroundColor Green
-          }
-        }
-        
-        Write-Host "=============================================" -ForegroundColor Cyan
-      shell: pwsh
-      
-    - name: Fix solution file platform mismatch
-      run: |
-        Write-Host "===== Checking Solution File =====" -ForegroundColor Cyan
-        
-        $solutionFile = "${{ env.SOLUTION_FILE }}"
-        if (Test-Path $solutionFile) {
-          $content = Get-Content $solutionFile -Raw
-          
-          # 检查是否使用了 x86 而不是 Win32
-          if ($content -match "x86") {
-            Write-Host "  ⚠ Fixing: Solution file uses 'x86' instead of 'Win32'" -ForegroundColor Yellow
-            
-            # 替换 x86 为 Win32（保持正确的映射）
-            $content = $content -replace '\|x86 =', '|Win32 ='
-            $content = $content -replace '\.x86\.', '.Win32.'
-            
-            # 保存修复后的文件
-            $content | Set-Content $solutionFile -NoNewline
-            
-            Write-Host "  ✓ Fixed: Platform references updated to Win32" -ForegroundColor Green
-          } else {
-            Write-Host "  ✓ OK: Solution file platform is correct" -ForegroundColor Green
-          }
-        }
-        
-        Write-Host "===================================" -ForegroundColor Cyan
-      shell: pwsh
-      
-    - name: Fix duplicate symbols in wasapi_recorder.cpp
-      run: |
-        Write-Host "===== Checking wasapi_recorder.cpp =====" -ForegroundColor Cyan
-        
-        $wasapiFile = "WeChatRecorder\wasapi_recorder.cpp"
-        $wechatFile = "WeChatRecorder\WeChatRecorder.cpp"
-        
-        if ((Test-Path $wasapiFile) -and (Test-Path $wechatFile)) {
-          # 检查两个文件是否内容相同（这会导致链接错误）
-          $wasapiContent = Get-Content $wasapiFile -Raw
-          $wechatContent = Get-Content $wechatFile -Raw
-          
-          # 检查 wasapi_recorder.cpp 是否包含 WeChatRecorder.cpp 的内容
-          if ($wasapiContent -match "WeChatRecorder\.cpp" -or 
-              $wasapiContent -match "INT_PTR CALLBACK MainDialogProc") {
-            
-            Write-Host "  ⚠ Error: wasapi_recorder.cpp contains duplicate code!" -ForegroundColor Yellow
-            Write-Host "  This file should only contain WasapiRecorder class implementation" -ForegroundColor Yellow
-            Write-Host "  Creating proper implementation..." -ForegroundColor Yellow
-            
-            # 创建正确的 wasapi_recorder.cpp 实现
-            $properImplementation = @'
-#include "wasapi_recorder.h"
-#include "log.h"
-#include <filesystem>
-#include <sstream>
-
-WasapiRecorder::WasapiRecorder() : m_isRecording(false), m_micVolumePercent(100), m_speakerVolumePercent(100) {}
-WasapiRecorder::~WasapiRecorder() { Stop(); }
-
-bool WasapiRecorder::Start(const std::wstring& filename, const std::wstring& inputDeviceId, 
-                           const std::wstring& outputDeviceId, int micVolumePercent, int speakerVolumePercent) {
-    if (m_isRecording.load()) return false;
-    WriteLog(L"[WasapiRecorder] Starting recording to: %s", filename.c_str());
-    m_finalMp3Path = filename;
-    m_inputDeviceId = inputDeviceId;
-    m_outputDeviceId = outputDeviceId;
-    m_micVolumePercent = micVolumePercent;
-    m_speakerVolumePercent = speakerVolumePercent;
-    std::filesystem::path finalPath(filename);
-    std::wstring baseName = finalPath.stem().wstring();
-    m_micTempWavPath = (finalPath.parent_path() / (baseName + L"_mic.wav")).wstring();
-    m_speakerTempWavPath = (finalPath.parent_path() / (baseName + L"_speaker.wav")).wstring();
-    m_isRecording.store(true);
-    try {
-        m_micThread = std::thread(&WasapiRecorder::MicRecordThreadProc, this);
-        m_speakerThread = std::thread(&WasapiRecorder::SpeakerRecordThreadProc, this);
-        return true;
-    } catch (...) {
-        m_isRecording.store(false);
-        return false;
-    }
-}
-
-void WasapiRecorder::Stop() {
-    if (!m_isRecording.load()) return;
-    m_isRecording.store(false);
-    if (m_micThread.joinable()) m_micThread.join();
-    if (m_speakerThread.joinable()) m_speakerThread.join();
-    WriteLog(L"[WasapiRecorder] Merging audio files...");
-    std::wstringstream cmd;
-    cmd << L"ffmpeg -y -i \"" << m_micTempWavPath << L"\" -i \"" << m_speakerTempWavPath << L"\" "
-        << L"-filter_complex \"[0:a]volume=" << (m_micVolumePercent/100.0) << L"[mic];"
-        << L"[1:a]volume=" << (m_speakerVolumePercent/100.0) << L"[spk];"
-        << L"[mic][spk]amix=inputs=2:duration=longest\" -b:a 192k \"" << m_finalMp3Path << L"\"";
-    RunFFmpegAndLog(cmd.str());
-    try {
-        if (std::filesystem::exists(m_micTempWavPath)) std::filesystem::remove(m_micTempWavPath);
-        if (std::filesystem::exists(m_speakerTempWavPath)) std::filesystem::remove(m_speakerTempWavPath);
-    } catch (...) {}
-}
-
-bool WasapiRecorder::IsRecording() const { return m_isRecording.load(); }
-void WasapiRecorder::MicRecordThreadProc() { RecordLoop(true); }
-void WasapiRecorder::SpeakerRecordThreadProc() { RecordLoop(false); }
-
-void WasapiRecorder::RecordLoop(bool isMic) {
-    const std::wstring& deviceId = isMic ? m_inputDeviceId : m_outputDeviceId;
-    const std::wstring& outputPath = isMic ? m_micTempWavPath : m_speakerTempWavPath;
-    std::wstringstream cmd;
-    cmd << L"ffmpeg -f dshow -i audio=\"" << deviceId << L"\" -t 3600 -y \"" << outputPath << L"\"";
-    STARTUPINFOW si = { sizeof(si) };
-    PROCESS_INFORMATION pi = {};
-    si.dwFlags = STARTF_USESHOWWINDOW;
-    si.wShowWindow = SW_HIDE;
-    std::wstring cmdStr = cmd.str();
-    if (CreateProcessW(NULL, &cmdStr[0], NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
-        while (m_isRecording.load()) {
-            if (WaitForSingleObject(pi.hProcess, 100) == WAIT_OBJECT_0) break;
-        }
-        if (!m_isRecording.load()) TerminateProcess(pi.hProcess, 0);
-        CloseHandle(pi.hProcess);
-        CloseHandle(pi.hThread);
-    }
-}
-
-void WasapiRecorder::RunFFmpegAndLog(const std::wstring& cmdLine) {
-    STARTUPINFOW si = { sizeof(si) };
-    PROCESS_INFORMATION pi = {};
-    si.dwFlags = STARTF_USESHOWWINDOW;
-    si.wShowWindow = SW_HIDE;
-    std::wstring cmd = cmdLine;
-    if (CreateProcessW(NULL, &cmd[0], NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
-        WaitForSingleObject(pi.hProcess, INFINITE);
-        CloseHandle(pi.hProcess);
-        CloseHandle(pi.hThread);
-    }
-}
-'@
-            
-            $properImplementation | Set-Content $wasapiFile -Encoding UTF8
-            Write-Host "  ✓ Fixed: Created proper WasapiRecorder implementation" -ForegroundColor Green
-          } else {
-            Write-Host "  ✓ OK: wasapi_recorder.cpp looks correct" -ForegroundColor Green
-          }
-        }
-        
-        Write-Host "========================================" -ForegroundColor Cyan
-      shell: pwsh
-        
-    - name: Detect and Configure Windows SDK
-      id: sdk_setup
-      run: |
-        # 查找已安装的 Windows SDK
-        $sdkPath = "C:\Program Files (x86)\Windows Kits\10\Include"
-        $availableSDKs = @()
-        
-        if (Test-Path $sdkPath) {
-          $availableSDKs = Get-ChildItem $sdkPath -Directory | 
-                          Sort-Object Name -Descending | 
-                          Select-Object -ExpandProperty Name
-        }
-        
-        if ($availableSDKs.Count -eq 0) {
-          Write-Error "No Windows SDK found!"
-          exit 1
-        }
-        
-        $latestSDK = $availableSDKs[0]
-        Write-Host "===== Windows SDK Detection =====" -ForegroundColor Cyan
-        Write-Host "Available SDK versions:" -ForegroundColor Green
-        $availableSDKs | ForEach-Object { Write-Host "  - $_" }
-        Write-Host "`nUsing latest SDK: $latestSDK" -ForegroundColor Green
-        Write-Host "=================================" -ForegroundColor Cyan
-        
-        echo "SDK_VERSION=$latestSDK" >> $env:GITHUB_OUTPUT
-        echo "WINDOWS_SDK_VERSION=$latestSDK" >> $env:GITHUB_ENV
-      shell: pwsh
-      
-    - name: Update project files to use available SDK
-      run: |
-        # 更新 .vcxproj 文件中的 WindowsTargetPlatformVersion
-        $projectFile = "WeChatRecorder\WeChatRecorder.vcxproj"
-        
-        if (Test-Path $projectFile) {
-          $content = Get-Content $projectFile -Raw
-          
-          # 替换 WindowsTargetPlatformVersion
-          $newContent = $content -replace '<WindowsTargetPlatformVersion>[\d\.]+</WindowsTargetPlatformVersion>', 
-                                         "<WindowsTargetPlatformVersion>${{ steps.sdk_setup.outputs.SDK_VERSION }}</WindowsTargetPlatformVersion>"
-          
-          $newContent | Set-Content $projectFile -NoNewline
-          
-          Write-Host "✓ Updated project file to use SDK: ${{ steps.sdk_setup.outputs.SDK_VERSION }}" -ForegroundColor Green
-        } else {
-          Write-Warning "Project file not found at: $projectFile"
-        }
-      shell: pwsh
-      
-    - name: Restore NuGet packages
-      run: nuget restore ${{ env.SOLUTION_FILE }}
-      
-    - name: Get version information
-      id: version
-      run: |
-        # 获取版本号
-        if ("${{ github.ref }}" -match "refs/tags/v(.+)") {
-          $version = $matches[1]
-        } else {
-          $version = (Get-Date -Format "yyyy.MM.dd.HHmm")
-        }
-        
-        # 获取提交信息
-        $commitShort = "${{ github.sha }}".Substring(0,7)
-        $commitMsg = git log -1 --pretty=%B
-        
-        # 输出变量
-        echo "version=$version" >> $env:GITHUB_OUTPUT
-        echo "commit=$commitShort" >> $env:GITHUB_OUTPUT
-        echo "commit_msg=$commitMsg" >> $env:GITHUB_OUTPUT
-        
-        Write-Host "Version: $version"
-        Write-Host "Commit: $commitShort"
-      shell: pwsh
-      
-    - name: Build solution
-      run: |
-        Write-Host "===== Build Configuration =====" -ForegroundColor Cyan
-        Write-Host "Configuration: ${{ matrix.configuration }}"
-        Write-Host "Platform: ${{ matrix.platform }}"
-        Write-Host "Windows SDK: ${{ steps.sdk_setup.outputs.SDK_VERSION }}"
-        Write-Host "Solution: ${{ env.SOLUTION_FILE }}"
-        Write-Host "===============================" -ForegroundColor Cyan
-        
-        msbuild ${{ env.SOLUTION_FILE }} `
-          /p:Configuration=${{ matrix.configuration }} `
-          /p:Platform=${{ matrix.platform }} `
-          /p:WindowsTargetPlatformVersion=${{ steps.sdk_setup.outputs.SDK_VERSION }} `
-          /p:PlatformToolset=v143 `
-          /m `
-          /v:minimal `
-          /p:UseMultiToolTask=true `
-          /p:CL_MPCount=2
-        
-        if ($LASTEXITCODE -ne 0) {
-          Write-Host "`n===== Build Failed =====" -ForegroundColor Red
-          Write-Error "Build failed with exit code $LASTEXITCODE"
-          exit $LASTEXITCODE
-        }
-        
-        Write-Host "`n✓ Build completed successfully!" -ForegroundColor Green
-      shell: pwsh
-      
-    - name: Locate and verify build output
-      id: locate_output
-      run: |
-        # 查找生成的 EXE 文件
-        $config = "${{ matrix.configuration }}"
-        $platform = "${{ matrix.platform }}"
-        
-        # 可能的输出路径（按优先级）
-        # 注意：项目文件可能使用 Win32 作为输出目录，即使解决方案使用 x86
-        $possiblePaths = @(
-          "WeChatRecorder\$platform\$config\${{ env.PROJECT_NAME }}.exe",
-          "WeChatRecorder\Win32\$config\${{ env.PROJECT_NAME }}.exe",
-          "WeChatRecorder\x64\$config\${{ env.PROJECT_NAME }}.exe",
-          "WeChatRecorder\x86\$config\${{ env.PROJECT_NAME }}.exe",
-          "$platform\$config\${{ env.PROJECT_NAME }}.exe",
-          "Win32\$config\${{ env.PROJECT_NAME }}.exe",
-          "x64\$config\${{ env.PROJECT_NAME }}.exe",
-          "x86\$config\${{ env.PROJECT_NAME }}.exe"
-        )
-        
-        Write-Host "===== Searching for Build Output =====" -ForegroundColor Yellow
-        Write-Host "Looking for: ${{ env.PROJECT_NAME }}.exe"
-        Write-Host "Platform: $platform"
-        Write-Host "Configuration: $config"
-        Write-Host ""
-        
-        $exePath = $null
-        foreach ($path in $possiblePaths) {
-          Write-Host "  Checking: $path"
-          if (Test-Path $path) {
-            $exePath = $path
-            Write-Host "  ✓ Found!" -ForegroundColor Green
-            break
-          }
-        }
-        
-        if (-not $exePath) {
-          Write-Host "`n⚠ Build output not found in expected locations!" -ForegroundColor Yellow
-          Write-Host "Searching entire workspace..."
-          
-          $foundExes = Get-ChildItem -Path . -Filter "${{ env.PROJECT_NAME }}.exe" -Recurse -ErrorAction SilentlyContinue
-          
-          if ($foundExes) {
-            Write-Host "`nFound EXE files:"
-            $foundExes | ForEach-Object { 
-              Write-Host "  - $($_.FullName)" -ForegroundColor Cyan
-              if (-not $exePath) {
-                $exePath = $_.FullName
-              }
-            }
-          } else {
-            Write-Error "✗ No build output found anywhere!"
-            exit 1
-          }
-        }
-        
-        # 获取文件信息
-        $fileInfo = Get-Item $exePath
-        Write-Host "`n===== Build Output =====" -ForegroundColor Green
-        Write-Host "File: $exePath"
-        Write-Host "Size: $([math]::Round($fileInfo.Length / 1KB, 2)) KB"
-        Write-Host "Modified: $($fileInfo.LastWriteTime)"
-        Write-Host "========================" -ForegroundColor Green
-        
-        # 保存输出路径
-        $outputDir = Split-Path $exePath -Parent
-        echo "output_dir=$outputDir" >> $env:GITHUB_OUTPUT
-        echo "exe_path=$exePath" >> $env:GITHUB_OUTPUT
-      shell: pwsh
-      
-    - name: Organize build artifacts
-      run: |
-        $sourceDir = "${{ steps.locate_output.outputs.output_dir }}"
-        $destDir = "build\${{ matrix.platform }}\${{ matrix.configuration }}"
-        
-        # 创建目标目录
-        New-Item -ItemType Directory -Force -Path $destDir | Out-Null
-        
-        # 复制所有构建产物
-        Write-Host "===== Organizing Build Artifacts =====" -ForegroundColor Cyan
-        Write-Host "Source: $sourceDir"
-        Write-Host "Destination: $destDir"
-        
-        Copy-Item -Path "$sourceDir\*" -Destination $destDir -Recurse -Force
-        
-        # 列出文件
-        Write-Host "`nBuild artifacts:"
-        Get-ChildItem $destDir -File | ForEach-Object {
-          $sizeKB = [math]::Round($_.Length / 1KB, 2)
-          Write-Host "  ✓ $($_.Name) ($sizeKB KB)" -ForegroundColor Green
-        }
-        Write-Host "======================================" -ForegroundColor Cyan
-      shell: pwsh
-      
-    - name: Create build metadata
-      run: |
-        $buildPath = "build\${{ matrix.platform }}\${{ matrix.configuration }}"
-        
-        $metadata = @"
-        {
-          "project": "${{ env.PROJECT_NAME }}",
-          "version": "${{ steps.version.outputs.version }}",
-          "commit": "${{ steps.version.outputs.commit }}",
-          "branch": "${{ github.ref_name }}",
-          "platform": "${{ matrix.platform }}",
-          "configuration": "${{ matrix.configuration }}",
-          "windows_sdk": "${{ steps.sdk_setup.outputs.SDK_VERSION }}",
-          "platform_toolset": "v143",
-          "build_date": "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')",
-          "workflow_run": "${{ github.run_number }}",
-          "triggered_by": "${{ github.actor }}"
-        }
-        "@
-        
-        $metadata | Out-File -FilePath "$buildPath\build-metadata.json" -Encoding UTF8
-        
-        $readmeContent = @"
-        # ${{ env.PROJECT_NAME }} Build
-        
-        **Version:** ${{ steps.version.outputs.version }}  
-        **Commit:** ${{ steps.version.outputs.commit }}  
-        **Branch:** ${{ github.ref_name }}  
-        **Platform:** ${{ matrix.platform }}  
-        **Configuration:** ${{ matrix.configuration }}  
-        **Windows SDK:** ${{ steps.sdk_setup.outputs.SDK_VERSION }}  
-        **Build Date:** $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')  
-        
-        ## Commit Message
-        ${{ steps.version.outputs.commit_msg }}
-        
-        ## Build Information
-        - Workflow Run: #${{ github.run_number }}
-        - Triggered by: ${{ github.actor }}
-        - Runner OS: Windows
-        - Platform Toolset: v143 (Visual Studio 2022)
-        
-        ## Files Included
-        "@ 
-        
-        Get-ChildItem $buildPath -File | ForEach-Object {
-          $readmeContent += "`n- $($_.Name) ($([math]::Round($_.Length / 1KB, 2)) KB)"
-        }
-        
-        $readmeContent | Out-File -FilePath "$buildPath\README.md" -Encoding UTF8
-      shell: pwsh
-      
-    - name: Cache build artifacts
-      uses: actions/cache/save@v4
-      id: cache-build
-      with:
-        path: build/${{ matrix.platform }}/${{ matrix.configuration }}
-        key: build-${{ runner.os }}-${{ matrix.platform }}-${{ matrix.configuration }}-${{ github.sha }}-${{ steps.version.outputs.version }}
-        
-    - name: Upload artifacts to GitHub
-      uses: actions/upload-artifact@v4
-      with:
-        name: ${{ env.PROJECT_NAME }}-${{ matrix.platform }}-${{ matrix.configuration }}-${{ steps.version.outputs.version }}
-        path: |
-          build/${{ matrix.platform }}/${{ matrix.configuration }}/*.exe
-          build/${{ matrix.platform }}/${{ matrix.configuration }}/*.dll
-          build/${{ matrix.platform }}/${{ matrix.configuration }}/*.pdb
-          build/${{ matrix.platform }}/${{ matrix.configuration }}/build-metadata.json
-          build/${{ matrix.platform }}/${{ matrix.configuration }}/README.md
-        retention-days: 30
-        if-no-files-found: error
-        
-  package-release:
-    name: Create release package
-    needs: build
-    runs-on: windows-latest
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/'))
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    - name: Get version
-      id: version
-      run: |
-        if ("${{ github.ref }}" -match "refs/tags/v(.+)") {
-          $version = $matches[1]
-        } else {
-          $version = (Get-Date -Format "yyyy.MM.dd.HHmm")
-        }
-        echo "version=$version" >> $env:GITHUB_OUTPUT
-        $commitShort = "${{ github.sha }}".Substring(0,7)
-        echo "commit=$commitShort" >> $env:GITHUB_OUTPUT
-      shell: pwsh
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v2
       
-    - name: Download all artifacts
-      uses: actions/download-artifact@v4
-      with:
-        path: artifacts
-        
-    - name: Create release packages
-      run: |
-        $version = "${{ steps.version.outputs.version }}"
-        
-        Write-Host "===== Creating Release Packages =====" -ForegroundColor Cyan
-        
-        # 为每个平台创建压缩包
-        Get-ChildItem artifacts -Directory | ForEach-Object {
-          $artifactName = $_.Name
-          $zipName = "$artifactName.zip"
-          
-          Compress-Archive -Path "$($_.FullName)\*" -DestinationPath $zipName -Force
-          
-          $zipSize = [math]::Round((Get-Item $zipName).Length / 1MB, 2)
-          Write-Host "  ✓ Created: $zipName ($zipSize MB)" -ForegroundColor Green
-        }
-        
-        # 创建完整包
-        $fullPackageName = "${{ env.PROJECT_NAME }}-Complete-v$version.zip"
-        Compress-Archive -Path "artifacts\*" -DestinationPath $fullPackageName -Force
-        
-        $fullSize = [math]::Round((Get-Item $fullPackageName).Length / 1MB, 2)
-        Write-Host "  ✓ Created: $fullPackageName ($fullSize MB)" -ForegroundColor Green
-        
-        Write-Host "=====================================" -ForegroundColor Cyan
-      shell: pwsh
+    - name: Restore NuGet packages
+      run: nuget restore WeChatRecorder.sln
       
-    - name: Upload release packages
-      uses: actions/upload-artifact@v4
-      with:
-        name: release-packages-${{ steps.version.outputs.version }}
-        path: "*.zip"
-        retention-days: 90
-        
-    - name: Cache release packages
-      uses: actions/cache/save@v4
-      with:
-        path: "*.zip"
-        key: release-${{ runner.os }}-${{ steps.version.outputs.version }}-${{ github.sha }}
-        
-  create-github-release:
-    name: Create GitHub Release
-    needs: [build, package-release]
-    runs-on: windows-latest
-    if: startsWith(github.ref, 'refs/tags/v')
-    permissions:
-      contents: write
-    
-    steps:
-    - name: Get version
-      id: version
-      run: |
-        $version = "${{ github.ref }}".Replace('refs/tags/v', '')
-        echo "version=$version" >> $env:GITHUB_OUTPUT
-      shell: pwsh
+    - name: Build Solution
+      run: msbuild WeChatRecorder.sln /p:Configuration=Release /p:Platform=x64
       
-    - name: Download release packages
-      uses: actions/download-artifact@v4
-      with:
-        name: release-packages-${{ steps.version.outputs.version }}
-        path: release-packages
-        
+    - name: Create Release Package
+      run: |
+        mkdir release-package
+        copy x64\Release\WeChatRecorder.exe release-package\
+        copy README.md release-package\
+        echo "请从 https://gyan.dev/ffmpeg/builds/ 下载 FFmpeg 并将 ffmpeg.exe 放置在同一目录下" > release-package\FFMPEG_README.txt
+      shell: cmd
+      
+    - name: Archive Release
+      run: |
+        Compress-Archive -Path release-package\* -DestinationPath WeChatRecorder-Release.zip
+      shell: powershell
+      
     - name: Create Release
-      uses: softprops/action-gh-release@v1
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        name: Release v${{ steps.version.outputs.version }}
+        tag_name: ${{ github.ref }}
+        release_name: Release ${{ github.ref_name }}
         body: |
-          ## WeChatRecorder v${{ steps.version.outputs.version }}
+          ## WeCall Recorder - 自动拾音工具
           
-          ### Changes
-          See commit history for details.
+          ### 📦 安装说明
+          1. 下载 `WeChatRecorder-Release.zip` 并解压
+          2. 从 [gyan.dev](https://gyan.dev/ffmpeg/builds/) 下载 FFmpeg (推荐 full 或 essentials 版本)
+          3. 将 `ffmpeg.exe` 放在与 `WeChatRecorder.exe` 相同的目录下
+          4. 运行 `WeChatRecorder.exe`
           
-          ### Downloads
-          - **x64 Release** - For 64-bit Windows systems (Recommended)
-          - **x86 Release** - For 32-bit Windows systems
-          - **Complete Package** - All builds included
+          ### ✨ 新功能
+          - 显示录音时长和文件大小
+          - 支持手动录音
+          - 优化的用户界面
+          - 可直接打开录音文件所在文件夹
           
-          ### Installation
-          1. Download the appropriate package for your system
-          2. Extract the ZIP file
-          3. Run WeChatRecorder.exe
+          ### ⚠️ 注意事项
+          - 需要 Windows Vista 或更高版本
+          - 必须安装包含 libmp3lame 的 FFmpeg
           
-          ### Requirements
-          - Windows 7 or later
-          - Visual C++ Redistributable (may be required)
-          
-          ### Build Information
-          - Built with Visual Studio 2022 (v143)
-          - Compatible with latest Windows SDK
-          - Built with GitHub Actions
-        files: |
-          release-packages/*.zip
         draft: false
         prerelease: false
+        
+    - name: Upload Release Asset
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./WeChatRecorder-Release.zip
+        asset_name: WeChatRecorder-Release.zip
+        asset_content_type: application/zip
+        
+    - name: Upload EXE
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./x64/Release/WeChatRecorder.exe
+        asset_name: WeChatRecorder.exe
+        asset_content_type: application/octet-stream

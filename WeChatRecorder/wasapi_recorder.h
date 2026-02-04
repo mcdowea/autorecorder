@@ -19,6 +19,11 @@ public:
         int speakerVolumePercent);
     void Stop();
     bool IsRecording() const;
+    
+    // 获取录音时长（秒）
+    int GetRecordingDuration() const;
+    // 获取当前文件大小（字节）
+    DWORD GetCurrentFileSize() const;
 
 private:
     void MicRecordThreadProc();
@@ -37,4 +42,8 @@ private:
     std::wstring m_outputDeviceId;
     int m_micVolumePercent;
     int m_speakerVolumePercent;
+    
+    // 录音时间追踪
+    std::chrono::steady_clock::time_point m_startTime;
+    std::atomic<DWORD> m_currentFileSize;
 };

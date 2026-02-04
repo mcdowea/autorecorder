@@ -3,6 +3,8 @@ name: Build and Release
 # 触发规则：保留你的配置，可选开启tag自动触发
 on:
   push:
+    branches:
+      - main
     # tags:
     #   - 'v*'  # 推送v开头标签时自动构建并发布Release，例如v1.0.0、v2.1.0
   workflow_dispatch:  # 允许手动在GitHub页面触发构建

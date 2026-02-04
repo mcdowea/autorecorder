@@ -18,167 +18,171 @@ on:
           - Debug
           - Release
 
+# 适配sln的目录结构，修正项目/解决方案路径、平台映射
 env:
   PROJECT_NAME: WeChatRecorder
-  SOLUTION_NAME: WeChatRecorder.vcxproj
+  SOLUTION_NAME: WeChatRecorder.sln # 根目录的sln，与实际一致
+  PROJECT_PROJ_PATH: WeChatRecorder/WeChatRecorder.vcxproj # sln中实际的vcxproj路径
+  BUILD_ROOT: ${{ github.workspace }}/build # 构建根目录，统一管理
 
 jobs:
   build:
     name: Build ${{ matrix.platform }} - ${{ matrix.configuration }}
     runs-on: windows-latest
-    
     strategy:
       matrix:
+        # 与sln的SolutionConfigurationPlatforms完全一致：x64、Win32（对应sln的x86）
         platform: [x64, Win32]
         configuration: [Release, Debug]
         exclude:
-          # 排除 Win32 Debug 以节省时间
           - platform: Win32
-            configuration: Debug
-    
+            configuration: Debug # 保留原优化，节省构建时间
+
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
-        
+
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v2
       with:
-        vs-version: latest
-        
+        vs-version: '17.14' # 与sln的VisualStudioVersion 17.14精准匹配，避免兼容问题
+        msbuild-architecture: x64
+
     - name: Setup NuGet
       uses: NuGet/setup-nuget@v2
-      
+
     - name: Restore dependencies
-      run: nuget restore ${{ env.SOLUTION_NAME }}
-      
+      run: nuget restore ${{ env.SOLUTION_NAME }} # 直接还原sln，自动识别子项目依赖，最可靠
+
+    - name: Create build directory
+      run: New-Item -Path ${{ env.BUILD_ROOT }} -ItemType Directory -Force
+      shell: pwsh # 确保构建输出目录存在，避免MSBuild路径报错
+
     - name: Get version information
       id: version
       run: |
-        # 获取版本号
         if ("${{ github.ref }}" -match "refs/tags/v(.+)") {
           $version = $matches[1]
         } else {
           $version = (Get-Date -Format "yyyy.MM.dd.HHmm")
         }
-        
-        # 获取提交信息
         $commitShort = "${{ github.sha }}".Substring(0,7)
-        $commitMsg = git log -1 --pretty=%B
-        
-        # 输出变量
+        $commitMsg = git log -1 --pretty=%B | Out-String | Trim # 去除提交信息多余换行，避免JSON/MD乱码
+
         echo "version=$version" >> $env:GITHUB_OUTPUT
         echo "commit=$commitShort" >> $env:GITHUB_OUTPUT
         echo "commit_msg=$commitMsg" >> $env:GITHUB_OUTPUT
-        
-        Write-Host "Version: $version"
-        Write-Host "Commit: $commitShort"
+
+        Write-Host "Version: $version" -ForegroundColor Cyan
+        Write-Host "Commit: $commitShort" -ForegroundColor Cyan
       shell: pwsh
-      
-    - name: Build project
+
+    - name: Build project (适配sln子项目结构)
       run: |
-        msbuild ${{ env.SOLUTION_NAME }} `
+        msbuild ${{ env.PROJECT_PROJ_PATH }} `
           /p:Configuration=${{ matrix.configuration }} `
           /p:Platform=${{ matrix.platform }} `
-          /p:OutDir="${{ github.workspace }}\build\${{ matrix.platform }}\${{ matrix.configuration }}\" `
-          /m `
-          /v:minimal
-      
-    - name: Verify build output
+          /p:OutDir="${{ env.BUILD_ROOT }}\${{ matrix.platform }}\${{ matrix.configuration }}\\" `
+          /p:SolutionDir="${{ github.workspace }}\\" ` # 关键：指定解决方案根目录，解决子项目的相对路径依赖
+          /m /nologo /v:normal # /nologo隐藏冗余日志，/v:normal保留关键错误信息
+      shell: pwsh
+
+    - name: Verify build output (核心校验，失败时打印目录内容排障)
       run: |
-        $exePath = "build\${{ matrix.platform }}\${{ matrix.configuration }}\${{ env.PROJECT_NAME }}.exe"
-        
-        if (Test-Path $exePath) {
-          Write-Host "✓ Build successful!" -ForegroundColor Green
-          Write-Host "File: $exePath"
+        $exePath = "${{ env.BUILD_ROOT }}\${{ matrix.platform }}\${{ matrix.configuration }}\${{ env.PROJECT_NAME }}.exe"
+        $buildDir = Split-Path $exePath -Parent
+
+        # 打印目录所有文件，方便排障
+        Write-Host "=== Build directory files ===" -ForegroundColor Yellow
+        Get-ChildItem -Recurse $buildDir | Format-Table Name, Length, LastWriteTime -AutoSize
+
+        if (Test-Path $exePath -PathType Leaf) {
+          Write-Host "✓ Build successful! EXE found: $exePath" -ForegroundColor Green
           $fileInfo = Get-Item $exePath
-          Write-Host "Size: $([math]::Round($fileInfo.Length / 1MB, 2)) MB"
-          Write-Host "Modified: $($fileInfo.LastWriteTime)"
+          Write-Host "Size: $([math]::Round($fileInfo.Length / 1MB, 2)) MB | Modified: $($fileInfo.LastWriteTime)" -ForegroundColor Green
         } else {
           Write-Error "✗ Build failed! EXE not found at: $exePath"
           exit 1
         }
       shell: pwsh
-      
-    - name: Create build metadata
+
+    - name: Create build metadata (JSON/MD UTF-8编码，避免乱码)
       run: |
-        $buildPath = "build\${{ matrix.platform }}\${{ matrix.configuration }}"
-        
-        $metadata = @"
-        {
-          "project": "${{ env.PROJECT_NAME }}",
-          "version": "${{ steps.version.outputs.version }}",
-          "commit": "${{ steps.version.outputs.commit }}",
-          "branch": "${{ github.ref_name }}",
-          "platform": "${{ matrix.platform }}",
-          "configuration": "${{ matrix.configuration }}",
-          "build_date": "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')",
-          "workflow_run": "${{ github.run_number }}",
-          "triggered_by": "${{ github.actor }}"
-        }
-        "@
-        
-        $metadata | Out-File -FilePath "$buildPath\build-metadata.json"
-        
+        $buildPath = "${{ env.BUILD_ROOT }}\${{ matrix.platform }}\${{ matrix.configuration }}"
+        $buildDate = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+
+        # 生成元数据JSON
+        $metadata = [PSCustomObject]@{
+          project = "${{ env.PROJECT_NAME }}"
+          version = "${{ steps.version.outputs.version }}"
+          commit = "${{ steps.version.outputs.commit }}"
+          branch = "${{ github.ref_name }}"
+          platform = "${{ matrix.platform }}"
+          configuration = "${{ matrix.configuration }}"
+          build_date = $buildDate
+          workflow_run = "${{ github.run_number }}"
+          triggered_by = "${{ github.actor }}"
+          solution_version = "17.14"
+        } | ConvertTo-Json -Depth 3
+        $metadata | Out-File -FilePath "$buildPath\build-metadata.json" -Encoding utf8 -Force
+
+        # 生成README.md
         $readmeContent = @"
-        # ${{ env.PROJECT_NAME }} Build
-        
-        **Version:** ${{ steps.version.outputs.version }}  
-        **Commit:** ${{ steps.version.outputs.commit }}  
-        **Branch:** ${{ github.ref_name }}  
-        **Platform:** ${{ matrix.platform }}  
-        **Configuration:** ${{ matrix.configuration }}  
-        **Build Date:** $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')  
-        
-        ## Commit Message
-        ${{ steps.version.outputs.commit_msg }}
-        
-        ## Build Information
-        - Workflow Run: #${{ github.run_number }}
-        - Triggered by: ${{ github.actor }}
-        - Runner OS: Windows
-        
-        ## Files Included
-        "@ 
-        
+# ${{ env.PROJECT_NAME }} Build
+**Version:** ${{ steps.version.outputs.version }}
+**Commit:** ${{ steps.version.outputs.commit }}
+**Branch:** ${{ github.ref_name }}
+**Platform:** ${{ matrix.platform }}
+**Configuration:** ${{ matrix.configuration }}
+**Build Date:** $buildDate
+
+## Commit Message
+${{ steps.version.outputs.commit_msg }}
+
+## Build Information
+- Workflow Run: [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+- Triggered by: ${{ github.actor }}
+- Runner OS: Windows (VS2022 17.14)
+- Solution File: ${{ env.SOLUTION_NAME }}
+
+## Files Included
+"@
+        # 追加文件列表
         Get-ChildItem $buildPath -File | ForEach-Object {
-          $readmeContent += "`n- $($_.Name) ($([math]::Round($_.Length / 1KB, 2)) KB)"
+          $sizeKB = [math]::Round($_.Length / 1KB, 2)
+          $readmeContent += "`n- $($_.Name) ($sizeKB KB)"
         }
-        
-        $readmeContent | Out-File -FilePath "$buildPath\README.md"
+        $readmeContent | Out-File -FilePath "$buildPath\README.md" -Encoding utf8 -Force
       shell: pwsh
-      
+
     - name: Cache build artifacts
       uses: actions/cache/save@v4
       id: cache-build
       with:
-        path: build/${{ matrix.platform }}/${{ matrix.configuration }}
+        path: ${{ env.BUILD_ROOT }}/${{ matrix.platform }}/${{ matrix.configuration }}
         key: build-${{ runner.os }}-${{ matrix.platform }}-${{ matrix.configuration }}-${{ github.sha }}-${{ steps.version.outputs.version }}
-        
+
     - name: Upload artifacts to GitHub
       uses: actions/upload-artifact@v4
       with:
         name: ${{ env.PROJECT_NAME }}-${{ matrix.platform }}-${{ matrix.configuration }}-${{ steps.version.outputs.version }}
         path: |
-          build/${{ matrix.platform }}/${{ matrix.configuration }}/*.exe
-          build/${{ matrix.platform }}/${{ matrix.configuration }}/*.dll
-          build/${{ matrix.platform }}/${{ matrix.configuration }}/*.pdb
-          build/${{ matrix.platform }}/${{ matrix.configuration }}/build-metadata.json
-          build/${{ matrix.platform }}/${{ matrix.configuration }}/README.md
+          ${{ env.BUILD_ROOT }}/${{ matrix.platform }}/${{ matrix.configuration }}/*.exe
+          ${{ env.BUILD_ROOT }}/${{ matrix.platform }}/${{ matrix.configuration }}/*.dll
+          ${{ env.BUILD_ROOT }}/${{ matrix.platform }}/${{ matrix.configuration }}/*.pdb
+          ${{ env.BUILD_ROOT }}/${{ matrix.platform }}/${{ matrix.configuration }}/build-metadata.json
+          ${{ env.BUILD_ROOT }}/${{ matrix.platform }}/${{ matrix.configuration }}/README.md
         retention-days: 30
-        if-no-files-found: error
-        
+        if-no-files-found: error # 无文件则直接失败，快速发现问题
+
   package-release:
     name: Create release package
     needs: build
     runs-on: windows-latest
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/'))
-    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
     - name: Get version
       id: version
       run: |
@@ -188,97 +192,91 @@ jobs:
           $version = (Get-Date -Format "yyyy.MM.dd.HHmm")
         }
         echo "version=$version" >> $env:GITHUB_OUTPUT
-        $commitShort = "${{ github.sha }}".Substring(0,7)
-        echo "commit=$commitShort" >> $env:GITHUB_OUTPUT
       shell: pwsh
-      
-    - name: Download all artifacts
+
+    - name: Download all build artifacts
       uses: actions/download-artifact@v4
       with:
         path: artifacts
-        
-    - name: Create release packages
+        merge-multiple: false # 保持每个构建产物的独立目录，避免文件冲突
+
+    - name: Create release zip packages
       run: |
         $version = "${{ steps.version.outputs.version }}"
-        
-        # 为每个平台创建压缩包
+        # 为每个平台/配置创建独立压缩包
         Get-ChildItem artifacts -Directory | ForEach-Object {
-          $artifactName = $_.Name
-          $zipName = "$artifactName.zip"
-          
-          Compress-Archive -Path "$($_.FullName)\*" -DestinationPath $zipName -Force
-          Write-Host "Created: $zipName"
+          $zipPath = "$($_.Name).zip"
+          Compress-Archive -Path "$($_.FullName)\*" -DestinationPath $zipPath -Force -CompressionLevel Optimal
+          Write-Host "✅ Created package: $zipPath ($([math]::Round((Get-Item $zipPath).Length / 1MB, 2)) MB)" -ForegroundColor Green
         }
-        
-        # 创建完整包
-        $fullPackageName = "${{ env.PROJECT_NAME }}-Complete-v$version.zip"
-        Compress-Archive -Path "artifacts\*" -DestinationPath $fullPackageName -Force
-        
-        Write-Host "`nCreated packages:"
-        Get-ChildItem *.zip | ForEach-Object {
-          Write-Host "  - $($_.Name) ($([math]::Round($_.Length / 1MB, 2)) MB)"
-        }
+        # 创建完整包（包含所有构建产物）
+        $fullPackage = "${{ env.PROJECT_NAME }}-Complete-v$version.zip"
+        Compress-Archive -Path "artifacts\*" -DestinationPath $fullPackage -Force -CompressionLevel Optimal
+        Write-Host "✅ Created complete package: $fullPackage ($([math]::Round((Get-Item $fullPackage).Length / 1MB, 2)) MB)" -ForegroundColor Green
       shell: pwsh
-      
+
     - name: Upload release packages
       uses: actions/upload-artifact@v4
       with:
         name: release-packages-${{ steps.version.outputs.version }}
         path: "*.zip"
         retention-days: 90
-        
+
     - name: Cache release packages
       uses: actions/cache/save@v4
       with:
         path: "*.zip"
         key: release-${{ runner.os }}-${{ steps.version.outputs.version }}-${{ github.sha }}
-        
+
   create-github-release:
     name: Create GitHub Release
     needs: [build, package-release]
     runs-on: windows-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') # 仅打tag时创建正式Release
     permissions:
-      contents: write
-    
+      contents: write # 授予创建Release的权限
     steps:
-    - name: Get version
+    - name: Get release version
       id: version
       run: |
         $version = "${{ github.ref }}".Replace('refs/tags/v', '')
         echo "version=$version" >> $env:GITHUB_OUTPUT
       shell: pwsh
-      
+
     - name: Download release packages
       uses: actions/download-artifact@v4
       with:
         name: release-packages-${{ steps.version.outputs.version }}
         path: release-packages
-        
-    - name: Create Release
-      uses: softprops/action-gh-release@v1
+
+    - name: Create GitHub Release with assets
+      uses: softprops/action-gh-release@v2 # 升级到v2，更稳定、兼容最新GitHub API
       with:
-        name: Release v${{ steps.version.outputs.version }}
+        name: WeChatRecorder v${{ steps.version.outputs.version }}
+        tag_name: v${{ steps.version.outputs.version }}
         body: |
           ## WeChatRecorder v${{ steps.version.outputs.version }}
+          Official build for Windows (VS2022 17.14)
           
-          ### Changes
-          See commit history for details.
+          ### 📥 Downloads
+          - **x64 Release** (Recommended): For 64-bit Windows 7/10/11
+          - **Win32 Release**: For 32-bit Windows systems
+          - **Complete Package**: Contains all build variants
           
-          ### Downloads
-          - **x64 Release** - For 64-bit Windows systems (Recommended)
-          - **Win32 Release** - For 32-bit Windows systems
-          - **Complete Package** - All builds included
+          ### 🛠 Installation
+          1. Download the appropriate ZIP package for your system
+          2. Extract the ZIP file to any directory
+          3. Run `WeChatRecorder.exe` directly (no installation required)
           
-          ### Installation
-          1. Download the appropriate package for your system
-          2. Extract the ZIP file
-          3. Run WeChatRecorder.exe
+          ### 📋 Requirements
+          - Windows 7 or later (x86/x64)
+          - Visual C++ Redistributable for Visual Studio 2022 (included in build if needed)
           
-          ### Requirements
-          - Windows 7 or later
-          - Visual C++ Redistributable (included in package)
-        files: |
-          release-packages/*.zip
+          ### 🔍 Build Info
+          - Commit: ${{ github.sha | substr 0 7 }}
+          - Build Time: ${{ github.run_at }}
+          - Runner: Windows Server 2022 (VS2022 17.14)
+        files: release-packages/*.zip
         draft: false
         prerelease: false
+        make_latest: true # 将最新tag设为最新Release

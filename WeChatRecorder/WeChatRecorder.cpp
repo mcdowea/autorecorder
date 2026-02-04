@@ -438,7 +438,10 @@ void StartManualRecording(HWND hWnd) {
     std::wstring outputDeviceId = GetSelectedOutputDeviceId();
     
     if (inputDeviceId.empty() || outputDeviceId.empty()) {
-        MessageBoxW(hWnd, L"请在"设置"中选择有效的输入和输出设备。", L"错误", MB_OK | MB_ICONERROR);
+        // ======================================
+        // 【唯一修改行】：双引号转义 \"设置\"
+        // ======================================
+        MessageBoxW(hWnd, L"请在\"设置\"中选择有效的输入和输出设备。", L"错误", MB_OK | MB_ICONERROR);
         return;
     }
     

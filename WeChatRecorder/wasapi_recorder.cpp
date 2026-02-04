@@ -1,294 +1,446 @@
-#include "wasapi_recorder.h"
-#include "log.h"
-#include <sstream>
-#include <iomanip>
-#include <comdef.h>
-#include <vector>
+/*
+ * =====================================================================================
+ *
+ * Filename:  WeChatRecorder.cpp
+ *
+ * Description:  Main application logic with final UI polish.
+ *
+ * =====================================================================================
+ */
+#include "framework.h"
+#include <windows.h>
+#include <atomic>
 #include <algorithm>
-#include <ks.h>
-#include <ksmedia.h>
+#include <filesystem>
+#include <vector>
+#include <string>
+#include <shellapi.h> 
 
-#pragma comment(lib, "ole32.lib")
-#pragma comment(lib, "oleaut32.lib")
-#pragma comment(lib, "uuid.lib")
+#include "resource.h"
+#include "config_manager.h"
+#include "wasapi_recorder.h"
+#include "wechat_detector.h"
+#include "device_page.h"
+#include "path_page.h"
+#include "about_page.h"
+#include "general_page.h"
+#include "blacklist_page.h" 
+ // #include "custom_button.h" // No longer needed
+#include "path_util.h"
+#include "log.h"
+#include "WeChatRecorder.h"
 
-#define SAFE_RELEASE(punk)  \
-    if ((punk) != NULL) {   \
-        (punk)->Release();  \
-        (punk) = NULL;      \
-    }
+#define WM_APP_TRAY_MSG (WM_APP + 1)
 
-WasapiRecorder::WasapiRecorder() : m_isRecording(false), m_micVolumePercent(150), m_speakerVolumePercent(100) {}
+// --- Global Variables ---
+HINSTANCE hInst;
+HWND hMainDialog = NULL;
+HWND hGeneralPage = NULL, hDevicePage = NULL, hPathPage = NULL, hAboutPage = NULL, hBlacklistPage = NULL;
+WasapiRecorder g_recorder;
+HANDLE hMonitorThread = NULL;
+HANDLE hUpdateInfoThread = NULL;
+std::atomic<bool> monitorRunning = false;
+std::atomic<bool> updateInfoRunning = false;
+bool isRecording = false;
+bool isMonitorStarted = false;
+std::wstring g_lastMicAppName;
+std::vector<std::wstring> g_blacklist;
+std::wstring g_currentRecordingFile;
+DWORD g_recordingStartTime = 0;
 
-WasapiRecorder::~WasapiRecorder() {
-    Stop();
-}
+// --- Forward Declarations ---
+void AddTrayIcon(HWND hWnd);
+void RemoveTrayIcon(HWND hWnd);
+void ShowTrayMenu(HWND hWnd);
+void UpdateTrayTip(HWND hWnd, const std::wstring& tipText);
+void UpdateRecordingInfo(HWND hWnd);
+DWORD WINAPI UpdateInfoThreadProc(LPVOID lpParam);
+INT_PTR CALLBACK SettingsDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam);
+INT_PTR CALLBACK MainDialogProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam);
 
-bool WasapiRecorder::IsRecording() const {
-    return m_isRecording;
-}
 
-bool WasapiRecorder::Start(const std::wstring& filename, const std::wstring& inputDeviceId, const std::wstring& outputDeviceId, int micVolumePercent, int speakerVolumePercent) {
-    if (m_isRecording) {
-        WriteLog(L"[Recorder] Â¼ÒôÒÑÔÚ½øĞĞÖĞ£¬ÎŞ·¨ÖØ¸´Æô¶¯¡£");
-        return false;
-    }
+void StartRecording(HWND hWnd) {
+    if (isRecording) return;
+    std::wstring appName;
+    if (!IsMicInUse(appName)) return;
+    g_lastMicAppName = appName;
 
-    m_finalMp3Path = filename;
-    m_inputDeviceId = inputDeviceId;
-    m_outputDeviceId = outputDeviceId;
-    m_micVolumePercent = micVolumePercent;
-    m_speakerVolumePercent = speakerVolumePercent;
+    auto it = std::find_if(g_blacklist.begin(), g_blacklist.end(), [&](const std::wstring& blockedApp) {
+        return _wcsicmp(blockedApp.c_str(), appName.c_str()) == 0;
+        });
 
-    WCHAR tempPath[MAX_PATH];
-    GetTempPathW(MAX_PATH, tempPath);
-    m_micTempWavPath = std::wstring(tempPath) + L"mic_temp.wav";
-    m_speakerTempWavPath = std::wstring(tempPath) + L"speaker_temp.wav";
-
-    m_isRecording = true;
-
-    try {
-        m_micThread = std::thread(&WasapiRecorder::MicRecordThreadProc, this);
-        m_speakerThread = std::thread(&WasapiRecorder::SpeakerRecordThreadProc, this);
-    }
-    catch (const std::system_error& e) {
-        WriteLog(L"[Recorder] Æô¶¯Ïß³ÌÊ§°Ü: %hs", e.what());
-        m_isRecording = false;
-        return false;
-    }
-
-    WriteLog(L"[Recorder] Âó¿Ë·çºÍÑïÉùÆ÷Â¼ÒôÈÎÎñÒÑÆô¶¯¡£");
-    return true;
-}
-
-void WasapiRecorder::Stop() {
-    if (!m_isRecording) return;
-
-    m_isRecording = false;
-
-    if (m_micThread.joinable()) {
-        WriteLog(L"[Recorder] µÈ´ıÂó¿Ë·çÂ¼ÒôÏß³Ì½áÊø...");
-        m_micThread.join();
-    }
-    if (m_speakerThread.joinable()) {
-        WriteLog(L"[Recorder] µÈ´ıÑïÉùÆ÷Â¼ÒôÏß³Ì½áÊø...");
-        m_speakerThread.join();
-    }
-    WriteLog(L"[Recorder] ËùÓĞ²É¼¯Ïß³ÌÒÑ½áÊø¡£");
-
-    // ¶¯Ì¬Éú³É´øÓĞÒôÁ¿²ÎÊıµÄÃüÁî
-    double micVol = m_micVolumePercent / 100.0;
-    double speakerVol = m_speakerVolumePercent / 100.0;
-
-    std::wstringstream cmdStream;
-    cmdStream << L"ffmpeg -y -i \"" << m_micTempWavPath << L"\" -i \"" << m_speakerTempWavPath
-        << L"\" -filter_complex \"[0:a]volume=" << std::fixed << std::setprecision(2) << micVol
-        << L"[a_mic];[1:a]volume=" << std::fixed << std::setprecision(2) << speakerVol
-        << L"[a_spk];[a_mic][a_spk]amix=inputs=2:duration=longest\" -acodec libmp3lame -b:a 192k \""
-        << m_finalMp3Path << L"\"";
-
-    std::wstring cmd = cmdStream.str();
-
-    WriteLog(L"[Recorder] ¿ªÊ¼Ö´ĞĞFFmpeg»ìÒô×ªÂë: %s", cmd.c_str());
-    RunFFmpegAndLog(cmd);
-
-    DeleteFileW(m_micTempWavPath.c_str());
-    DeleteFileW(m_speakerTempWavPath.c_str());
-    WriteLog(L"[Recorder] ÁÙÊ±ÎÄ¼şÒÑÇåÀí¡£");
-}
-
-void WasapiRecorder::MicRecordThreadProc() {
-    WriteLog(L"[MicThread] Âó¿Ë·çÂ¼ÒôÏß³ÌÆô¶¯¡£");
-    RecordLoop(true);
-    WriteLog(L"[MicThread] Âó¿Ë·çÂ¼ÒôÏß³Ì½áÊø¡£");
-}
-
-void WasapiRecorder::SpeakerRecordThreadProc() {
-    WriteLog(L"[SpeakerThread] ÑïÉùÆ÷Â¼ÒôÏß³ÌÆô¶¯¡£");
-    RecordLoop(false);
-    WriteLog(L"[SpeakerThread] ÑïÉùÆ÷Â¼ÒôÏß³Ì½áÊø¡£");
-}
-
-void WasapiRecorder::RecordLoop(bool isMic) {
-    HRESULT hr;
-    HANDLE hFile = INVALID_HANDLE_VALUE;
-    DWORD dataSize = 0;
-
-    IMMDeviceEnumerator* pEnumerator = nullptr;
-    IMMDevice* pDevice = nullptr;
-    IAudioClient* pAudioClient = nullptr;
-    IAudioCaptureClient* pCaptureClient = nullptr;
-    WAVEFORMATEX* pWfx = nullptr;
-    HANDLE hSamplesReadyEvent = NULL;
-    DWORD bytesWritten = 0;
-
-    const DWORD waitTimeout = 100;
-
-    CoInitializeEx(NULL, COINIT_MULTITHREADED);
-
-    do {
-        std::wstring deviceId = isMic ? m_inputDeviceId : m_outputDeviceId;
-        std::wstring tempFilePath = isMic ? m_micTempWavPath : m_speakerTempWavPath;
-        EDataFlow dataFlow = isMic ? eCapture : eRender;
-        DWORD streamFlags = isMic ? AUDCLNT_STREAMFLAGS_EVENTCALLBACK : (AUDCLNT_STREAMFLAGS_EVENTCALLBACK | AUDCLNT_STREAMFLAGS_LOOPBACK);
-        const wchar_t* logPrefix = isMic ? L"[MicThread]" : L"[SpeakerThread]";
-
-        hSamplesReadyEvent = CreateEventEx(NULL, NULL, 0, EVENT_MODIFY_STATE | SYNCHRONIZE);
-        if (!hSamplesReadyEvent) break;
-
-        hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), NULL, CLSCTX_ALL, IID_PPV_ARGS(&pEnumerator));
-        if (FAILED(hr)) break;
-
-        hr = pEnumerator->GetDevice(deviceId.c_str(), &pDevice);
-        if (FAILED(hr)) break;
-
-        hr = pDevice->Activate(__uuidof(IAudioClient), CLSCTX_ALL, NULL, (void**)&pAudioClient);
-        if (FAILED(hr)) break;
-
-        hr = pAudioClient->GetMixFormat(&pWfx);
-        if (FAILED(hr)) break;
-
-        WriteLog(L"%s »ñÈ¡µ½Éè±¸Ô­Ê¼ÒôÆµ¸ñÊ½ - ¸ñÊ½ÀàĞÍ: %d, Î»Éî: %d, ÉùµÀ: %d, ²ÉÑùÂÊ: %d",
-            logPrefix, pWfx->wFormatTag, pWfx->wBitsPerSample, pWfx->nChannels, pWfx->nSamplesPerSec);
-
-        hr = pAudioClient->Initialize(AUDCLNT_SHAREMODE_SHARED, streamFlags, 10000000, 0, pWfx, NULL);
-        if (FAILED(hr)) break;
-
-        hr = pAudioClient->SetEventHandle(hSamplesReadyEvent);
-        if (FAILED(hr)) break;
-
-        hr = pAudioClient->GetService(__uuidof(IAudioCaptureClient), (void**)&pCaptureClient);
-        if (FAILED(hr)) break;
-
-        hFile = CreateFileW(tempFilePath.c_str(), GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-        if (hFile == INVALID_HANDLE_VALUE) break;
-
-        WORD bits_per_sample = 16;
-        WORD channels = pWfx->nChannels;
-        DWORD sample_rate = pWfx->nSamplesPerSec;
-        WORD block_align = channels * (bits_per_sample / 8);
-        DWORD byte_rate = sample_rate * block_align;
-        DWORD header[] = {
-            'FFIR', 36, 'EVAW', ' tmf', 16,
-            (DWORD)((channels << 16) | 1),
-            sample_rate, byte_rate,
-            (DWORD)((bits_per_sample << 16) | block_align),
-            'atad', 0
-        };
-        WriteFile(hFile, header, sizeof(header), &bytesWritten, NULL);
-
-        hr = pAudioClient->Start();
-        if (FAILED(hr)) break;
-
-        while (m_isRecording) {
-            DWORD waitResult = WaitForSingleObject(hSamplesReadyEvent, waitTimeout);
-            if (!m_isRecording) break;
-
-            UINT32 packetLength = 0;
-            if (pCaptureClient) pCaptureClient->GetNextPacketSize(&packetLength);
-
-            if (packetLength > 0) {
-                BYTE* pData;
-                UINT32 numFramesAvailable;
-                DWORD flags;
-                hr = pCaptureClient->GetBuffer(&pData, &numFramesAvailable, &flags, NULL, NULL);
-                if (FAILED(hr)) break;
-
-                if (numFramesAvailable > 0) {
-                    if (flags & AUDCLNT_BUFFERFLAGS_SILENT) {
-                        DWORD silentBytes = numFramesAvailable * channels * 2;
-                        std::vector<BYTE> silentBuffer(silentBytes, 0);
-                        WriteFile(hFile, silentBuffer.data(), silentBytes, &bytesWritten, NULL);
-                        dataSize += bytesWritten;
-                    }
-                    else {
-                        std::vector<BYTE> convertedBuffer;
-                        bool conversionSuccess = false;
-
-                        bool isFloat = (pWfx->wFormatTag == WAVE_FORMAT_IEEE_FLOAT) ||
-                            (pWfx->wFormatTag == WAVE_FORMAT_EXTENSIBLE && IsEqualGUID(reinterpret_cast<WAVEFORMATEXTENSIBLE*>(pWfx)->SubFormat, KSDATAFORMAT_SUBTYPE_IEEE_FLOAT));
-
-                        if (isFloat && pWfx->wBitsPerSample == 32) {
-                            float* floatData = (float*)pData;
-                            size_t sampleCount = numFramesAvailable * channels;
-                            convertedBuffer.resize(sampleCount * sizeof(int16_t));
-                            int16_t* intData = (int16_t*)convertedBuffer.data();
-                            for (size_t i = 0; i < sampleCount; ++i) {
-                                float sample = (std::max)(-1.0f, (std::min)(1.0f, floatData[i]));
-                                intData[i] = static_cast<int16_t>(sample * 32767.0f);
-                            }
-                            conversionSuccess = true;
-                        }
-                        else if (pWfx->wFormatTag == WAVE_FORMAT_PCM && pWfx->wBitsPerSample == 16) {
-                            size_t byteCount = numFramesAvailable * pWfx->nBlockAlign;
-                            convertedBuffer.assign(pData, pData + byteCount);
-                            conversionSuccess = true;
-                        }
-
-                        if (conversionSuccess) {
-                            WriteFile(hFile, convertedBuffer.data(), (DWORD)convertedBuffer.size(), &bytesWritten, NULL);
-                            dataSize += bytesWritten;
-                        }
-                        else {
-                            WriteLog(L"%s ¾¯¸æ£º½ÓÊÕµ½²»Ö§³ÖµÄÒôÆµ¸ñÊ½£¬ÒÑÌø¹ıÊı¾İ°ü¡£", logPrefix);
-                        }
-                    }
-                }
-                pCaptureClient->ReleaseBuffer(numFramesAvailable);
-            }
-            else if (waitResult == WAIT_TIMEOUT) {
-                UINT32 silentFrames = (sample_rate * waitTimeout) / 1000;
-                DWORD silentBytes = silentFrames * block_align;
-                if (silentBytes > 0) {
-                    std::vector<BYTE> silentBuffer(silentBytes, 0);
-                    WriteFile(hFile, silentBuffer.data(), silentBytes, &bytesWritten, NULL);
-                    dataSize += bytesWritten;
-                }
-            }
-            if (pCaptureClient && packetLength > 0) {
-                pCaptureClient->GetNextPacketSize(&packetLength);
-            }
-        }
-
-    } while (false);
-
-    if (pAudioClient) pAudioClient->Stop();
-    if (hFile != INVALID_HANDLE_VALUE) {
-        SetFilePointer(hFile, 4, NULL, FILE_BEGIN);
-        DWORD totalSize = 36 + dataSize;
-        WriteFile(hFile, &totalSize, 4, &bytesWritten, NULL);
-        SetFilePointer(hFile, 40, NULL, FILE_BEGIN);
-        WriteFile(hFile, &dataSize, 4, &bytesWritten, NULL);
-        CloseHandle(hFile);
-    }
-
-    CoTaskMemFree(pWfx);
-    SAFE_RELEASE(pCaptureClient);
-    SAFE_RELEASE(pAudioClient);
-    SAFE_RELEASE(pDevice);
-    SAFE_RELEASE(pEnumerator);
-    if (hSamplesReadyEvent) CloseHandle(hSamplesReadyEvent);
-    CoUninitialize();
-}
-
-void WasapiRecorder::RunFFmpegAndLog(const std::wstring& cmdLine) {
-    std::wstring realCmd = cmdLine + L" 2>&1";
-    WriteLog(L"[FFmpeg] Ö´ĞĞÃüÁî: %s", realCmd.c_str());
-    FILE* pipe = _wpopen(realCmd.c_str(), L"rt, ccs=UTF-8");
-    if (!pipe) {
-        WriteLog(L"[FFmpeg] Æô¶¯Ê§°Ü£¬_wpopen·µ»Ønull¡£");
+    if (it != g_blacklist.end()) {
+        WriteLog(L"[ä¸»çº¿ç¨‹] åº”ç”¨ %s åœ¨é»‘åå•ä¸­ï¼Œå·²é˜»æ­¢å½•éŸ³ã€‚", appName.c_str());
+        SetDlgItemText(hWnd, IDC_LABEL_STATUS, (L"å·²é˜»æ­¢: " + appName).c_str());
         return;
     }
-    wchar_t buf[512];
-    while (fgetws(buf, _countof(buf), pipe)) {
-        size_t len = wcslen(buf);
-        if (len > 0 && (buf[len - 1] == L'\n' || buf[len - 1] == L'\r')) {
-            buf[len - 1] = L'\0';
-            if (len > 1 && (buf[len - 2] == L'\r' || buf[len - 2] == L'\n')) {
-                buf[len - 2] = L'\0';
+
+    std::wstring inputDeviceId = GetSelectedInputDeviceId();
+    std::wstring outputDeviceId = GetSelectedOutputDeviceId();
+
+    if (inputDeviceId.empty() || outputDeviceId.empty()) {
+        WriteLog(L"[é”™è¯¯] å¯åŠ¨å½•éŸ³å¤±è´¥ï¼šæœªé€‰æ‹©æœ‰æ•ˆçš„è¾“å…¥æˆ–è¾“å‡ºè®¾å¤‡ã€‚");
+        MessageBoxW(hWnd, L"è¯·åœ¨â€œè®¾ç½®â€ä¸­é€‰æ‹©æœ‰æ•ˆçš„è¾“å…¥å’Œè¾“å‡ºè®¾å¤‡ã€‚", L"é”™è¯¯", MB_OK | MB_ICONERROR);
+        return;
+    }
+
+    std::wstring exeName = appName;
+    size_t pos = exeName.rfind(L".exe");
+    if (pos != std::wstring::npos && pos == exeName.length() - 4) {
+        exeName = exeName.substr(0, pos);
+    }
+
+    std::wstring filePath = GenerateSavePath(g_savePath, exeName);
+    std::filesystem::create_directories(std::filesystem::path(filePath).parent_path());
+
+    if (g_recorder.Start(filePath, inputDeviceId, outputDeviceId, g_micVolumePercent, g_speakerVolumePercent)) {
+        isRecording = true;
+        g_currentRecordingFile = filePath;
+        g_recordingStartTime = GetTickCount();
+        
+        // å¯åŠ¨ä¿¡æ¯æ›´æ–°çº¿ç¨‹
+        updateInfoRunning = true;
+        hUpdateInfoThread = CreateThread(NULL, 0, UpdateInfoThreadProc, hWnd, 0, NULL);
+        
+        std::wstring statusText = L"æ­£åœ¨å½•åˆ¶: " + appName;
+        SetDlgItemText(hWnd, IDC_LABEL_STATUS, statusText.c_str());
+        UpdateTrayTip(hWnd, statusText);
+    }
+    else {
+        isRecording = false;
+        SetDlgItemText(hWnd, IDC_LABEL_STATUS, L"å¯åŠ¨å¤±è´¥");
+        UpdateTrayTip(hWnd, L"å¯åŠ¨å¤±è´¥");
+    }
+}
+
+void StopRecording(HWND hWnd) {
+    if (!isRecording) return;
+    
+    // åœæ­¢ä¿¡æ¯æ›´æ–°çº¿ç¨‹
+    updateInfoRunning = false;
+    if (hUpdateInfoThread) {
+        WaitForSingleObject(hUpdateInfoThread, 1000);
+        CloseHandle(hUpdateInfoThread);
+        hUpdateInfoThread = NULL;
+    }
+    
+    g_recorder.Stop();
+    isRecording = false;
+    g_currentRecordingFile.clear();
+    
+    // é‡ç½®æ˜¾ç¤º
+    SetDlgItemText(hWnd, IDC_LABEL_DURATION, L"00:00:00");
+    SetDlgItemText(hWnd, IDC_LABEL_FILESIZE, L"0 KB");
+
+    std::wstring statusText = isMonitorStarted ? L"å·²å¯åŠ¨æ£€æµ‹..." : L"ç­‰å¾…ä¸­...";
+    SetDlgItemText(hWnd, IDC_LABEL_STATUS, statusText.c_str());
+    UpdateTrayTip(hWnd, statusText);
+}
+
+DWORD WINAPI MonitorThreadProc(LPVOID lpParam) {
+    HWND hWnd = (HWND)lpParam;
+    while (monitorRunning) {
+        std::wstring appName;
+        if (IsMicInUse(appName)) {
+            if (!isRecording) PostMessage(hWnd, WM_USER + 1, 0, 0);
+        }
+        else {
+            if (isRecording) PostMessage(hWnd, WM_USER + 2, 0, 0);
+        }
+        Sleep(1000);
+    }
+    return 0;
+}
+
+// æ›´æ–°å½•éŸ³ä¿¡æ¯çš„çº¿ç¨‹
+DWORD WINAPI UpdateInfoThreadProc(LPVOID lpParam) {
+    HWND hWnd = (HWND)lpParam;
+    while (updateInfoRunning && isRecording) {
+        UpdateRecordingInfo(hWnd);
+        Sleep(500);  // æ¯500msæ›´æ–°ä¸€æ¬¡
+    }
+    return 0;
+}
+
+// æ›´æ–°å½•éŸ³æ—¶é•¿å’Œæ–‡ä»¶å¤§å°
+void UpdateRecordingInfo(HWND hWnd) {
+    if (!isRecording || g_currentRecordingFile.empty()) return;
+    
+    // è®¡ç®—å½•éŸ³æ—¶é•¿
+    DWORD elapsedTime = (GetTickCount() - g_recordingStartTime) / 1000;  // ç§’
+    DWORD hours = elapsedTime / 3600;
+    DWORD minutes = (elapsedTime % 3600) / 60;
+    DWORD seconds = elapsedTime % 60;
+    
+    wchar_t timeBuffer[32];
+    swprintf_s(timeBuffer, L"%02lu:%02lu:%02lu", hours, minutes, seconds);
+    SetDlgItemText(hWnd, IDC_LABEL_DURATION, timeBuffer);
+    
+    // è®¡ç®—æ–‡ä»¶å¤§å°
+    std::wstring mp3File = g_currentRecordingFile;
+    // æ£€æŸ¥å¤šä¸ªå¯èƒ½çš„ä¸´æ—¶æ–‡ä»¶
+    std::vector<std::wstring> possibleFiles = {
+        mp3File,
+        mp3File + L".mic.wav",
+        mp3File + L".speaker.wav"
+    };
+    
+    unsigned long long totalSize = 0;
+    for (const auto& file : possibleFiles) {
+        try {
+            if (std::filesystem::exists(file)) {
+                totalSize += std::filesystem::file_size(file);
             }
         }
-        if (wcslen(buf) > 0) { WriteLog(L"[FFmpeg] %s", buf); }
+        catch (...) {
+            // å¿½ç•¥æ–‡ä»¶è®¿é—®é”™è¯¯
+        }
     }
-    _pclose(pipe);
+    
+    wchar_t sizeBuffer[64];
+    if (totalSize < 1024) {
+        swprintf_s(sizeBuffer, L"%llu B", totalSize);
+    }
+    else if (totalSize < 1024 * 1024) {
+        swprintf_s(sizeBuffer, L"%.2f KB", totalSize / 1024.0);
+    }
+    else if (totalSize < 1024 * 1024 * 1024) {
+        swprintf_s(sizeBuffer, L"%.2f MB", totalSize / (1024.0 * 1024.0));
+    }
+    else {
+        swprintf_s(sizeBuffer, L"%.2f GB", totalSize / (1024.0 * 1024.0 * 1024.0));
+    }
+    
+    SetDlgItemText(hWnd, IDC_LABEL_FILESIZE, sizeBuffer);
+}
+
+INT_PTR CALLBACK SettingsDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
+    switch (message) {
+    case WM_INITDIALOG: {
+        // *** FIX: Reverted to using the placeholder control for robust positioning ***
+        HWND hPlaceholder = GetDlgItem(hDlg, IDC_SUBPAGE_PLACEHOLDER);
+        RECT rc;
+        GetWindowRect(hPlaceholder, &rc);
+        MapWindowPoints(HWND_DESKTOP, hDlg, (LPPOINT)&rc, 2);
+        DestroyWindow(hPlaceholder);
+
+        hGeneralPage = CreateDialog(hInst, MAKEINTRESOURCE(IDD_PAGE_GENERAL), hDlg, GeneralPageProc);
+        hDevicePage = CreateDialog(hInst, MAKEINTRESOURCE(IDD_PAGE_DEVICE), hDlg, DevicePageProc);
+        hPathPage = CreateDialog(hInst, MAKEINTRESOURCE(IDD_PAGE_PATH), hDlg, PathPageProc);
+        hBlacklistPage = CreateDialog(hInst, MAKEINTRESOURCE(IDD_PAGE_BLACKLIST), hDlg, BlacklistPageProc);
+        hAboutPage = CreateDialog(hInst, MAKEINTRESOURCE(IDD_PAGE_ABOUT), hDlg, AboutPageProc);
+
+        HWND pages[] = { hGeneralPage, hDevicePage, hPathPage, hBlacklistPage, hAboutPage };
+
+        for (HWND page : pages) {
+            if (page) {
+                // Use the placeholder's rectangle to position all sub-pages
+                MoveWindow(page, rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top, TRUE);
+                ShowWindow(page, SW_HIDE);
+            }
+        }
+        if (hGeneralPage) ShowWindow(hGeneralPage, SW_SHOW);
+        return TRUE;
+    }
+    case WM_COMMAND: {
+        HWND pagesToShow[] = { hGeneralPage, hDevicePage, hPathPage, hBlacklistPage, hAboutPage };
+        for (HWND page : pagesToShow) if (page) ShowWindow(page, SW_HIDE);
+
+        HWND pageToShow = NULL;
+        switch (LOWORD(wParam)) {
+        case IDC_BTN_GENERAL:   pageToShow = hGeneralPage;    break;
+        case IDC_BTN_DEVICE:    pageToShow = hDevicePage;     break;
+        case IDC_BTN_PATH:      pageToShow = hPathPage;       break;
+        case IDC_BTN_BLACKLIST: pageToShow = hBlacklistPage;  break;
+        case IDC_BTN_ABOUT:     pageToShow = hAboutPage;      break;
+        case IDOK: case IDCANCEL:
+            EndDialog(hDlg, 0);
+            return TRUE;
+        }
+        if (pageToShow) ShowWindow(pageToShow, SW_SHOW);
+        return TRUE;
+    }
+    case WM_DESTROY:
+        SaveConfig();
+        HWND pagesToDestroy[] = { hGeneralPage, hDevicePage, hPathPage, hBlacklistPage, hAboutPage };
+        for (HWND page : pagesToDestroy) if (page) DestroyWindow(page);
+        return TRUE;
+    }
+    return FALSE;
+}
+
+INT_PTR CALLBACK MainDialogProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
+    hMainDialog = hDlg;
+    switch (message) {
+    case WM_INITDIALOG: {
+        InitializeDefaultDevices();
+        HICON hIcon = LoadIcon(hInst, MAKEINTRESOURCE(IDI_WECHATRECORDER));
+        SendMessage(hDlg, WM_SETICON, ICON_BIG, (LPARAM)hIcon);
+        HICON hIconSmall = LoadIcon(hInst, MAKEINTRESOURCE(IDI_SMALL));
+        SendMessage(hDlg, WM_SETICON, ICON_SMALL, (LPARAM)hIconSmall);
+
+        RECT rcDlg; GetWindowRect(hDlg, &rcDlg);
+        int dlgW = rcDlg.right - rcDlg.left, dlgH = rcDlg.bottom - rcDlg.top;
+        int screenW = GetSystemMetrics(SM_CXSCREEN), screenH = GetSystemMetrics(SM_CYSCREEN);
+        SetWindowPos(hDlg, NULL, (screenW - dlgW) / 2, (screenH - dlgH) / 2, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+
+        SetDlgItemText(hDlg, IDC_LABEL_STATUS, L"ç­‰å¾…ä¸­...");
+        SetDlgItemText(hDlg, IDC_LABEL_DURATION, L"00:00:00");
+        SetDlgItemText(hDlg, IDC_LABEL_FILESIZE, L"0 KB");
+        UpdateTrayTip(hDlg, L"ç­‰å¾…ä¸­...");
+        return TRUE;
+    }
+    case WM_APP_TRAY_MSG: {
+        switch (lParam) {
+        case WM_LBUTTONDBLCLK:
+            ShowWindow(hDlg, SW_RESTORE);
+            SetForegroundWindow(hDlg);
+            RemoveTrayIcon(hDlg);
+            break;
+        case WM_RBUTTONUP:
+            ShowTrayMenu(hDlg);
+            break;
+        }
+        return TRUE;
+    }
+    case WM_SYSCOMMAND: {
+        if (wParam == SC_CLOSE) {
+            if (g_minimizeToTray) {
+                AddTrayIcon(hDlg);
+                ShowWindow(hDlg, SW_HIDE);
+            }
+            else {
+                SendMessage(hDlg, WM_CLOSE, 0, 0);
+            }
+            return TRUE;
+        }
+        break;
+    }
+    case WM_USER + 1: StartRecording(hDlg); return TRUE;
+    case WM_USER + 2: StopRecording(hDlg); return TRUE;
+    case WM_COMMAND:
+        switch (LOWORD(wParam)) {
+        case IDC_BTN_START:
+            if (!isMonitorStarted) {
+                isMonitorStarted = true; monitorRunning = true;
+                hMonitorThread = CreateThread(NULL, 0, MonitorThreadProc, hDlg, 0, NULL);
+                SetDlgItemText(hDlg, IDC_LABEL_STATUS, L"å·²å¯åŠ¨æ£€æµ‹...");
+                SetDlgItemText(hDlg, IDC_BTN_START, L"åœæ­¢æ£€æµ‹");
+                UpdateTrayTip(hDlg, L"å·²å¯åŠ¨æ£€æµ‹...");
+            }
+            else {
+                monitorRunning = false;
+                if (hMonitorThread) { WaitForSingleObject(hMonitorThread, 1500); CloseHandle(hMonitorThread); hMonitorThread = NULL; }
+                if (isRecording) StopRecording(hDlg);
+                isMonitorStarted = false;
+                SetDlgItemText(hDlg, IDC_LABEL_STATUS, L"ç­‰å¾…ä¸­...");
+                SetDlgItemText(hDlg, IDC_BTN_START, L"å¼€å§‹æ£€æµ‹");
+                UpdateTrayTip(hDlg, L"ç­‰å¾…ä¸­...");
+            }
+            break;
+        case IDC_BTN_SETTINGS:
+            DialogBox(hInst, MAKEINTRESOURCE(IDD_SETTINGS_DIALOG), hDlg, SettingsDlgProc);
+            break;
+        case ID_TRAY_SHOW:
+            ShowWindow(hDlg, SW_RESTORE);
+            SetForegroundWindow(hDlg);
+            RemoveTrayIcon(hDlg);
+            break;
+        case ID_TRAY_EXIT:
+            SendMessage(hDlg, WM_CLOSE, 0, 0);
+            break;
+        }
+        return TRUE;
+    case WM_CLOSE:
+        monitorRunning = false;
+        updateInfoRunning = false;
+        if (hMonitorThread) { WaitForSingleObject(hMonitorThread, 1000); CloseHandle(hMonitorThread); }
+        if (hUpdateInfoThread) { WaitForSingleObject(hUpdateInfoThread, 1000); CloseHandle(hUpdateInfoThread); }
+        if (isRecording) StopRecording(hDlg);
+        RemoveTrayIcon(hDlg);
+        SaveConfig();
+        EndDialog(hDlg, 0);
+        return TRUE;
+    case WM_DESTROY:
+        PostQuitMessage(0);
+        return TRUE;
+    }
+    return FALSE;
+}
+
+int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLine, int nCmdShow) {
+    const wchar_t* appName = L"è‡ªåŠ¨æ‹¾éŸ³ --byå¤œèº";
+    const wchar_t* mutexName = L"{8F4A3A6E-4556-4B18-831E-164741A6C5F3}-è‡ªåŠ¨æ‹¾éŸ³ --byå¤œèº";
+    HANDLE hMutex = CreateMutex(NULL, TRUE, mutexName);
+
+    if (hMutex != NULL && GetLastError() == ERROR_ALREADY_EXISTS) {
+        HWND hWndExisting = FindWindow(NULL, appName);
+        if (hWndExisting) {
+            ShowWindow(hWndExisting, SW_RESTORE);
+            SetForegroundWindow(hWndExisting);
+        }
+        CloseHandle(hMutex);
+        return 1;
+    }
+
+    hInst = hInstance;
+    LoadConfig();
+    DialogBox(hInstance, MAKEINTRESOURCE(IDD_MAIN_DIALOG), NULL, MainDialogProc);
+
+    if (hMutex) {
+        ReleaseMutex(hMutex);
+        CloseHandle(hMutex);
+    }
+    return 0;
+}
+
+void UpdateTrayTip(HWND hWnd, const std::wstring& tipText) {
+    if (!IsWindowVisible(hWnd)) { // Only update if the window is hidden (in tray)
+        NOTIFYICONDATA nid = {};
+        nid.cbSize = sizeof(NOTIFYICONDATA);
+        nid.hWnd = hWnd;
+        nid.uID = IDI_WECHATRECORDER;
+        nid.uFlags = NIF_TIP;
+        wcscpy_s(nid.szTip, tipText.c_str());
+        Shell_NotifyIcon(NIM_MODIFY, &nid);
+    }
+}
+
+void AddTrayIcon(HWND hWnd) {
+    NOTIFYICONDATA nid = {};
+    nid.cbSize = sizeof(NOTIFYICONDATA);
+    nid.hWnd = hWnd;
+    nid.uID = IDI_WECHATRECORDER;
+    nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+    nid.uCallbackMessage = WM_APP_TRAY_MSG;
+    nid.hIcon = (HICON)LoadImage(hInst, MAKEINTRESOURCE(IDI_WECHATRECORDER), IMAGE_ICON,
+        GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR);
+
+    wchar_t statusText[100];
+    GetDlgItemText(hWnd, IDC_LABEL_STATUS, statusText, 100);
+    wcscpy_s(nid.szTip, statusText);
+
+    Shell_NotifyIcon(NIM_ADD, &nid);
+}
+
+void RemoveTrayIcon(HWND hWnd) {
+    NOTIFYICONDATA nid = {};
+    nid.cbSize = sizeof(NOTIFYICONDATA);
+    nid.hWnd = hWnd;
+    nid.uID = IDI_WECHATRECORDER;
+    Shell_NotifyIcon(NIM_DELETE, &nid);
+}
+
+void ShowTrayMenu(HWND hWnd) {
+    POINT pt;
+    GetCursorPos(&pt);
+    HMENU hMenu = LoadMenu(hInst, MAKEINTRESOURCE(IDR_TRAY_MENU));
+    if (hMenu) {
+        HMENU hSubMenu = GetSubMenu(hMenu, 0);
+        if (hSubMenu) {
+            SetForegroundWindow(hWnd);
+            TrackPopupMenu(hSubMenu, TPM_LEFTALIGN | TPM_BOTTOMALIGN | TPM_RIGHTBUTTON, pt.x, pt.y, 0, hWnd, NULL);
+        }
+        DestroyMenu(hMenu);
+    }
 }

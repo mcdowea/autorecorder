@@ -1,0 +1,284 @@
+name: Advanced Build and Cache
+
+on:
+  push:
+    branches: [ main, master, develop ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build type'
+        required: true
+        default: 'Release'
+        type: choice
+        options:
+          - Debug
+          - Release
+
+env:
+  PROJECT_NAME: WeChatRecorder
+  SOLUTION_NAME: WeChatRecorder.vcxproj
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }} - ${{ matrix.configuration }}
+    runs-on: windows-latest
+    
+    strategy:
+      matrix:
+        platform: [x64, Win32]
+        configuration: [Release, Debug]
+        exclude:
+          # 排除 Win32 Debug 以节省时间
+          - platform: Win32
+            configuration: Debug
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v2
+      with:
+        vs-version: latest
+        
+    - name: Setup NuGet
+      uses: NuGet/setup-nuget@v2
+      
+    - name: Restore dependencies
+      run: nuget restore ${{ env.SOLUTION_NAME }}
+      
+    - name: Get version information
+      id: version
+      run: |
+        # 获取版本号
+        if ("${{ github.ref }}" -match "refs/tags/v(.+)") {
+          $version = $matches[1]
+        } else {
+          $version = (Get-Date -Format "yyyy.MM.dd.HHmm")
+        }
+        
+        # 获取提交信息
+        $commitShort = "${{ github.sha }}".Substring(0,7)
+        $commitMsg = git log -1 --pretty=%B
+        
+        # 输出变量
+        echo "version=$version" >> $env:GITHUB_OUTPUT
+        echo "commit=$commitShort" >> $env:GITHUB_OUTPUT
+        echo "commit_msg=$commitMsg" >> $env:GITHUB_OUTPUT
+        
+        Write-Host "Version: $version"
+        Write-Host "Commit: $commitShort"
+      shell: pwsh
+      
+    - name: Build project
+      run: |
+        msbuild ${{ env.SOLUTION_NAME }} `
+          /p:Configuration=${{ matrix.configuration }} `
+          /p:Platform=${{ matrix.platform }} `
+          /p:OutDir="${{ github.workspace }}\build\${{ matrix.platform }}\${{ matrix.configuration }}\" `
+          /m `
+          /v:minimal
+      
+    - name: Verify build output
+      run: |
+        $exePath = "build\${{ matrix.platform }}\${{ matrix.configuration }}\${{ env.PROJECT_NAME }}.exe"
+        
+        if (Test-Path $exePath) {
+          Write-Host "✓ Build successful!" -ForegroundColor Green
+          Write-Host "File: $exePath"
+          $fileInfo = Get-Item $exePath
+          Write-Host "Size: $([math]::Round($fileInfo.Length / 1MB, 2)) MB"
+          Write-Host "Modified: $($fileInfo.LastWriteTime)"
+        } else {
+          Write-Error "✗ Build failed! EXE not found at: $exePath"
+          exit 1
+        }
+      shell: pwsh
+      
+    - name: Create build metadata
+      run: |
+        $buildPath = "build\${{ matrix.platform }}\${{ matrix.configuration }}"
+        
+        $metadata = @"
+        {
+          "project": "${{ env.PROJECT_NAME }}",
+          "version": "${{ steps.version.outputs.version }}",
+          "commit": "${{ steps.version.outputs.commit }}",
+          "branch": "${{ github.ref_name }}",
+          "platform": "${{ matrix.platform }}",
+          "configuration": "${{ matrix.configuration }}",
+          "build_date": "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')",
+          "workflow_run": "${{ github.run_number }}",
+          "triggered_by": "${{ github.actor }}"
+        }
+        "@
+        
+        $metadata | Out-File -FilePath "$buildPath\build-metadata.json"
+        
+        $readmeContent = @"
+        # ${{ env.PROJECT_NAME }} Build
+        
+        **Version:** ${{ steps.version.outputs.version }}  
+        **Commit:** ${{ steps.version.outputs.commit }}  
+        **Branch:** ${{ github.ref_name }}  
+        **Platform:** ${{ matrix.platform }}  
+        **Configuration:** ${{ matrix.configuration }}  
+        **Build Date:** $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')  
+        
+        ## Commit Message
+        ${{ steps.version.outputs.commit_msg }}
+        
+        ## Build Information
+        - Workflow Run: #${{ github.run_number }}
+        - Triggered by: ${{ github.actor }}
+        - Runner OS: Windows
+        
+        ## Files Included
+        "@ 
+        
+        Get-ChildItem $buildPath -File | ForEach-Object {
+          $readmeContent += "`n- $($_.Name) ($([math]::Round($_.Length / 1KB, 2)) KB)"
+        }
+        
+        $readmeContent | Out-File -FilePath "$buildPath\README.md"
+      shell: pwsh
+      
+    - name: Cache build artifacts
+      uses: actions/cache/save@v4
+      id: cache-build
+      with:
+        path: build/${{ matrix.platform }}/${{ matrix.configuration }}
+        key: build-${{ runner.os }}-${{ matrix.platform }}-${{ matrix.configuration }}-${{ github.sha }}-${{ steps.version.outputs.version }}
+        
+    - name: Upload artifacts to GitHub
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ env.PROJECT_NAME }}-${{ matrix.platform }}-${{ matrix.configuration }}-${{ steps.version.outputs.version }}
+        path: |
+          build/${{ matrix.platform }}/${{ matrix.configuration }}/*.exe
+          build/${{ matrix.platform }}/${{ matrix.configuration }}/*.dll
+          build/${{ matrix.platform }}/${{ matrix.configuration }}/*.pdb
+          build/${{ matrix.platform }}/${{ matrix.configuration }}/build-metadata.json
+          build/${{ matrix.platform }}/${{ matrix.configuration }}/README.md
+        retention-days: 30
+        if-no-files-found: error
+        
+  package-release:
+    name: Create release package
+    needs: build
+    runs-on: windows-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/'))
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Get version
+      id: version
+      run: |
+        if ("${{ github.ref }}" -match "refs/tags/v(.+)") {
+          $version = $matches[1]
+        } else {
+          $version = (Get-Date -Format "yyyy.MM.dd.HHmm")
+        }
+        echo "version=$version" >> $env:GITHUB_OUTPUT
+        $commitShort = "${{ github.sha }}".Substring(0,7)
+        echo "commit=$commitShort" >> $env:GITHUB_OUTPUT
+      shell: pwsh
+      
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+        
+    - name: Create release packages
+      run: |
+        $version = "${{ steps.version.outputs.version }}"
+        
+        # 为每个平台创建压缩包
+        Get-ChildItem artifacts -Directory | ForEach-Object {
+          $artifactName = $_.Name
+          $zipName = "$artifactName.zip"
+          
+          Compress-Archive -Path "$($_.FullName)\*" -DestinationPath $zipName -Force
+          Write-Host "Created: $zipName"
+        }
+        
+        # 创建完整包
+        $fullPackageName = "${{ env.PROJECT_NAME }}-Complete-v$version.zip"
+        Compress-Archive -Path "artifacts\*" -DestinationPath $fullPackageName -Force
+        
+        Write-Host "`nCreated packages:"
+        Get-ChildItem *.zip | ForEach-Object {
+          Write-Host "  - $($_.Name) ($([math]::Round($_.Length / 1MB, 2)) MB)"
+        }
+      shell: pwsh
+      
+    - name: Upload release packages
+      uses: actions/upload-artifact@v4
+      with:
+        name: release-packages-${{ steps.version.outputs.version }}
+        path: "*.zip"
+        retention-days: 90
+        
+    - name: Cache release packages
+      uses: actions/cache/save@v4
+      with:
+        path: "*.zip"
+        key: release-${{ runner.os }}-${{ steps.version.outputs.version }}-${{ github.sha }}
+        
+  create-github-release:
+    name: Create GitHub Release
+    needs: [build, package-release]
+    runs-on: windows-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    
+    steps:
+    - name: Get version
+      id: version
+      run: |
+        $version = "${{ github.ref }}".Replace('refs/tags/v', '')
+        echo "version=$version" >> $env:GITHUB_OUTPUT
+      shell: pwsh
+      
+    - name: Download release packages
+      uses: actions/download-artifact@v4
+      with:
+        name: release-packages-${{ steps.version.outputs.version }}
+        path: release-packages
+        
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        name: Release v${{ steps.version.outputs.version }}
+        body: |
+          ## WeChatRecorder v${{ steps.version.outputs.version }}
+          
+          ### Changes
+          See commit history for details.
+          
+          ### Downloads
+          - **x64 Release** - For 64-bit Windows systems (Recommended)
+          - **Win32 Release** - For 32-bit Windows systems
+          - **Complete Package** - All builds included
+          
+          ### Installation
+          1. Download the appropriate package for your system
+          2. Extract the ZIP file
+          3. Run WeChatRecorder.exe
+          
+          ### Requirements
+          - Windows 7 or later
+          - Visual C++ Redistributable (included in package)
+        files: |
+          release-packages/*.zip
+        draft: false
+        prerelease: false

@@ -38,6 +38,10 @@
 #define IDC_BTN_START                   1001
 #define IDC_LABEL_STATUS                1008
 #define IDC_BTN_SETTINGS                1010
+#define IDC_LABEL_DURATION              1030
+#define IDC_LABEL_FILESIZE              1031
+#define IDC_STATIC_DURATION_TITLE       1032
+#define IDC_STATIC_FILESIZE_TITLE       1033
 
 // General Page Controls
 #define IDC_SLIDER_MIC_VOL              1015

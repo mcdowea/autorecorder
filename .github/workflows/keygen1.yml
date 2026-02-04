@@ -1,89 +1,127 @@
-name: Build and Release
+# 整合版：推代码自动打v*语义化标签 → 自动构建 → 自动发布Release
+name: Auto Tag, Build and Release
 
+# 触发条件：
+# 1. 向main分支推代码 → 触发自动打标签
+# 2. 推送v*格式标签 → 触发构建和Release发布（自动打标签后会自动触发此规则）
+# 3. 手动触发 → 可按需运行打标签/构建发布
 on:
   push:
-    tags:
-      - 'v0.0.1'  # 当推送以v开头的标签时触发,例如 v1.0.0
-  workflow_dispatch:  # 允许手动触发
+    branches: [main]          # 推main分支：仅运行【自动打标签】job
+    tags: ['v*']              # 推v*标签：仅运行【构建发布】job
+    tags-ignore: ['v*']       # 排除标签推送对分支的触发，避免循环
+  workflow_dispatch:          # 手动触发：可选择运行任意job（默认全运行）
+
+# 全局权限配置：解决403错误，赋予GITHUB_TOKEN必要的写权限
+# contents: write → 允许创建标签、推送标签、创建Release、上传资产
+# pull-requests: read → 规范配置，非必须
+permissions:
+  contents: write
+  pull-requests: read
 
 jobs:
-  build:
-    runs-on: windows-latest
-    
+  # Job1：自动打v*语义化标签（仅推main分支时运行，标签推送后自动触发Job2）
+  auto-tag:
+    # 条件控制：仅当触发源是【推main分支】时运行，推标签/手动触发不运行
+    if: github.ref_type == 'branch' && github.ref_name == 'main'
+    runs-on: ubuntu-latest
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Setup MSBuild
-      uses: microsoft/setup-msbuild@v2
-      
-    - name: Restore NuGet packages
-      run: nuget restore WeChatRecorder.sln
-      
-    - name: Build Solution
-      run: |
-        chcp 65001
-        msbuild WeChatRecorder.sln /p:Configuration=Release /p:Platform=x64
-      
-    - name: Create Release Package
-      run: |
-        mkdir release-package
-        copy x64\Release\WeChatRecorder.exe release-package\
-        copy README.md release-package\
-        echo "请从 https://gyan.dev/ffmpeg/builds/ 下载 FFmpeg 并将 ffmpeg.exe 放置在同一目录下" > release-package\FFMPEG_README.txt
-      shell: cmd
-      
-    - name: Archive Release
-      run: |
-        Compress-Archive -Path release-package\* -DestinationPath WeChatRecorder-Release.zip
-      shell: powershell
-      
-    - name: Create Release
-      id: create_release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GIT_TOKEN }}
-      with:
-        tag_name: ${{ github.ref }}
-        release_name: Release ${{ github.ref_name }}
-        body: |
-          ## WeCall Recorder - 自动拾音工具
-          
-          ### 📦 安装说明
-          1. 下载 `WeChatRecorder-Release.zip` 并解压
-          2. 从 [gyan.dev](https://gyan.dev/ffmpeg/builds/) 下载 FFmpeg (推荐 full 或 essentials 版本)
-          3. 将 `ffmpeg.exe` 放在与 `WeChatRecorder.exe` 相同的目录下
-          4. 运行 `WeChatRecorder.exe`
-          
-          ### ✨ 新功能
-          - 显示录音时长和文件大小
-          - 支持手动录音
-          - 优化的用户界面
-          - 可直接打开录音文件所在文件夹
-          
-          ### ⚠️ 注意事项
-          - 需要 Windows Vista 或更高版本
-          - 必须安装包含 libmp3lame 的 FFmpeg
-          
+      - name: 拉取仓库代码（需拉取所有提交记录，用于版本判断）
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 必须设为0，否则无法获取历史提交判断版本升级
+
+      - name: 自动生成v*格式语义化标签
+        uses: anothrNick/github-tag-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # 用GitHub内置令牌，无需手动创建GIT_TOKEN
+          DEFAULT_BUMP: patch                        # 默认补丁更新（v0.0.1→v0.0.2）
+          TAG_PREFIX: v                              # 固定标签前缀为v，和构建发布的触发规则匹配
+          RELEASE_BRANCHES: main                     # 仅在main分支触发自动打标签
+          VERBOSE: true                              # 输出详细日志，方便排查问题
+          # 提交信息关键字对应版本升级（行业语义化规范，无需修改）
+          # feat: xxx → minor小版本（v0.0.1→v0.1.0）
+          # fix!/BREAKING CHANGE → major大版本（v0.1.0→v1.0.0）
+          # 其他（fix:/docs:/ci:）→ patch补丁版本
+
+  # Job2：构建项目并发布Release（仅推送v*标签时运行，自动打标签后会自动触发）
+  build-release:
+    # 条件控制：仅当触发源是【推v*标签】时运行，推分支/手动触发可按需取消
+    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+    runs-on: windows-latest
+    needs: []  # 不依赖auto-tag，因为标签推送是独立触发，避免手动打标签时等待
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      - name: 配置MSBuild环境（Windows构建C#必备）
+        uses: microsoft/setup-msbuild@v2
+
+      - name: 还原NuGet依赖包
+        run: nuget restore WeChatRecorder.sln
+
+      - name: 构建Release版本（x64）
+        run: |
+          chcp 65001  # 解决中文乱码
+          msbuild WeChatRecorder.sln /p:Configuration=Release /p:Platform=x64
+
+      - name: 准备发布包文件
+        run: |
+          mkdir release-package
+          copy x64\Release\WeChatRecorder.exe release-package\
+          copy README.md release-package\
+          echo "请从 https://gyan.dev/ffmpeg/builds/ 下载 FFmpeg 并将 ffmpeg.exe 放置在同一目录下" > release-package\FFMPEG_README.txt
+        shell: cmd
+
+      - name: 压缩发布包为ZIP
+        run: Compress-Archive -Path release-package\* -DestinationPath WeChatRecorder-Release.zip
+        shell: powershell
+
+      - name: 创建GitHub Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}  # 修复：用纯标签名（如v0.0.1），替代带路径的github.ref
+          release_name: Release ${{ github.ref_name }}  # 发布名称，如Release v0.0.1
+          body: |
+            ## WeChatRecorder - 微信录音自动拾音工具
+            
+            ### 📦 安装说明
+            1. 下载 `WeChatRecorder-Release.zip` 并解压
+            2. 从 [gyan.dev](https://gyan.dev/ffmpeg/builds/) 下载 FFmpeg（推荐full/essentials版本）
+            3. 将 `ffmpeg.exe` 放在与 `WeChatRecorder.exe` 相同目录下
+            4. 直接运行 `WeChatRecorder.exe`
+            
+            ### ✨ 功能特性
+            - 显示录音时长和文件大小
+            - 支持手动/自动录音
+            - 优化的可视化用户界面
+            - 一键打开录音文件所在文件夹
+            
+            ### ⚠️ 注意事项
+            - 适用系统：Windows Vista 及以上版本
+            - 必须安装包含 libmp3lame 编码器的 FFmpeg
         draft: false
         prerelease: false
-        
-    - name: Upload Release Asset
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GIT_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./WeChatRecorder-Release.zip
-        asset_name: WeChatRecorder-Release.zip
-        asset_content_type: application/zip
-        
-    - name: Upload EXE
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GIT_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./x64/Release/WeChatRecorder.exe
-        asset_name: WeChatRecorder.exe
-        asset_content_type: application/octet-stream
+
+      - name: 上传ZIP压缩包到Release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./WeChatRecorder-Release.zip
+          asset_name: WeChatRecorder-Release.zip
+          asset_content_type: application/zip
+
+      - name: 上传单独的EXE文件到Release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./x64/Release/WeChatRecorder.exe
+          asset_name: WeChatRecorder.exe
+          asset_content_type: application/octet-stream

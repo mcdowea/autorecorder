@@ -16,26 +16,41 @@ jobs:
       
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v2
+    
+    - name: Install vcpkg FFmpeg
+      run: |
+        git clone https://github.com/Microsoft/vcpkg.git C:\vcpkg
+        cd C:\vcpkg
+        .\bootstrap-vcpkg.bat
+        .\vcpkg install ffmpeg:x64-windows
+      shell: cmd
+      
+    - name: Setup FFmpeg Environment
+      run: |
+        echo "FFMPEG_ROOT=C:\vcpkg\installed\x64-windows" >> $env:GITHUB_ENV
+        echo "C:\vcpkg\installed\x64-windows\bin" >> $env:GITHUB_PATH
+      shell: powershell
       
     - name: Restore NuGet packages
       run: nuget restore WeChatRecorder.sln
       
-    - name: Upgrade Project Toolset
-      run: |
-        msbuild WeChatRecorder.sln /t:Restore /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143
-      shell: cmd
-      
     - name: Build Solution
       run: |
         chcp 65001
-        msbuild WeChatRecorder.sln /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143
+        msbuild WeChatRecorder.sln /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /p:AdditionalIncludeDirectories="C:\vcpkg\installed\x64-windows\include" /p:AdditionalLibraryDirectories="C:\vcpkg\installed\x64-windows\lib"
+      
+    - name: Copy FFmpeg DLLs
+      run: |
+        copy C:\vcpkg\installed\x64-windows\bin\*.dll x64\Release\
+      shell: cmd
       
     - name: Create Release Package
       run: |
         mkdir release-package
         copy x64\Release\WeChatRecorder.exe release-package\
+        copy x64\Release\*.dll release-package\
         copy README.md release-package\
-        echo "请从 https://gyan.dev/ffmpeg/builds/ 下载 FFmpeg 并将 ffmpeg.exe 放置在同一目录下" > release-package\FFMPEG_README.txt
+        echo "FFmpeg libraries are included in this release package." > release-package\FFMPEG_README.txt
       shell: cmd
       
     - name: Archive Release
@@ -52,23 +67,22 @@ jobs:
         tag_name: ${{ github.ref }}
         release_name: Release ${{ github.ref_name }}
         body: |
-          ## WeCall Recorder - 自动拾音工具
+          ## WeChat Recorder - 自动拾音工具
           
           ### 📦 安装说明
           1. 下载 `WeChatRecorder-Release.zip` 并解压
-          2. 从 [gyan.dev](https://gyan.dev/ffmpeg/builds/) 下载 FFmpeg (推荐 full 或 essentials 版本)
-          3. 将 `ffmpeg.exe` 放在与 `WeChatRecorder.exe` 相同的目录下
-          4. 运行 `WeChatRecorder.exe`
+          2. 运行 `WeChatRecorder.exe`
           
           ### ✨ 新功能
           - 显示录音时长和文件大小
           - 支持手动录音
           - 优化的用户界面
           - 可直接打开录音文件所在文件夹
+          - FFmpeg 库已包含在发布包中
           
           ### ⚠️ 注意事项
           - 需要 Windows Vista 或更高版本
-          - 必须安装包含 libmp3lame 的 FFmpeg
+          - 所需的 FFmpeg 库已包含,无需单独下载
           
         draft: false
         prerelease: false

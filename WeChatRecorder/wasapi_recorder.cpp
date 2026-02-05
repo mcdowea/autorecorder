@@ -1,4 +1,4 @@
-#include "wasapi_recorder.h"
+ï»¿#include "wasapi_recorder.h"
 #include "log.h"
 #include <sstream>
 #include <iomanip>
@@ -31,7 +31,7 @@ bool WasapiRecorder::IsRecording() const {
 
 bool WasapiRecorder::Start(const std::wstring& filename, const std::wstring& inputDeviceId, const std::wstring& outputDeviceId, int micVolumePercent, int speakerVolumePercent) {
     if (m_isRecording) {
-        WriteLog(L"[Recorder] Â¼ÒôÒÑÔÚ½øĞĞÖĞ£¬ÎŞ·¨ÖØ¸´Æô¶¯¡£");
+        WriteLog(L"[Recorder] Â¼ï¿½ï¿½ï¿½ï¿½ï¿½Ú½ï¿½ï¿½ï¿½ï¿½Ğ£ï¿½ï¿½Ş·ï¿½ï¿½Ø¸ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½");
         return false;
     }
 
@@ -55,12 +55,12 @@ bool WasapiRecorder::Start(const std::wstring& filename, const std::wstring& inp
         m_speakerThread = std::thread(&WasapiRecorder::SpeakerRecordThreadProc, this);
     }
     catch (const std::system_error& e) {
-        WriteLog(L"[Recorder] Æô¶¯Ïß³ÌÊ§°Ü: %hs", e.what());
+        WriteLog(L"[Recorder] ï¿½ï¿½ï¿½ï¿½ß³ï¿½Ê§ï¿½ï¿½: %hs", e.what());
         m_isRecording = false;
         return false;
     }
 
-    WriteLog(L"[Recorder] Âó¿Ë·çºÍÑïÉùÆ÷Â¼ÒôÈÎÎñÒÑÆô¶¯¡£");
+    WriteLog(L"[Recorder] ï¿½ï¿½Ë·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Â¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½");
     return true;
 }
 
@@ -70,16 +70,16 @@ void WasapiRecorder::Stop() {
     m_isRecording = false;
 
     if (m_micThread.joinable()) {
-        WriteLog(L"[Recorder] µÈ´ıÂó¿Ë·çÂ¼ÒôÏß³Ì½áÊø...");
+        WriteLog(L"[Recorder] ï¿½È´ï¿½ï¿½ï¿½Ë·ï¿½Â¼ï¿½ï¿½ï¿½ß³Ì½ï¿½ï¿½ï¿½...");
         m_micThread.join();
     }
     if (m_speakerThread.joinable()) {
-        WriteLog(L"[Recorder] µÈ´ıÑïÉùÆ÷Â¼ÒôÏß³Ì½áÊø...");
+        WriteLog(L"[Recorder] ï¿½È´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Â¼ï¿½ï¿½ï¿½ß³Ì½ï¿½ï¿½ï¿½...");
         m_speakerThread.join();
     }
-    WriteLog(L"[Recorder] ËùÓĞ²É¼¯Ïß³ÌÒÑ½áÊø¡£");
+    WriteLog(L"[Recorder] ï¿½ï¿½ï¿½Ğ²É¼ï¿½ï¿½ß³ï¿½ï¿½Ñ½ï¿½ï¿½ï¿½ï¿½ï¿½");
 
-    // ¶¯Ì¬Éú³É´øÓĞÒôÁ¿²ÎÊıµÄÃüÁî
+    // ï¿½ï¿½Ì¬ï¿½ï¿½ï¿½É´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     double micVol = m_micVolumePercent / 100.0;
     double speakerVol = m_speakerVolumePercent / 100.0;
 
@@ -92,24 +92,24 @@ void WasapiRecorder::Stop() {
 
     std::wstring cmd = cmdStream.str();
 
-    WriteLog(L"[Recorder] ¿ªÊ¼Ö´ĞĞFFmpeg»ìÒô×ªÂë: %s", cmd.c_str());
+    WriteLog(L"[Recorder] ï¿½ï¿½Ê¼Ö´ï¿½ï¿½FFmpegï¿½ï¿½ï¿½ï¿½×ªï¿½ï¿½: %s", cmd.c_str());
     RunFFmpegAndLog(cmd);
 
     DeleteFileW(m_micTempWavPath.c_str());
     DeleteFileW(m_speakerTempWavPath.c_str());
-    WriteLog(L"[Recorder] ÁÙÊ±ÎÄ¼şÒÑÇåÀí¡£");
+    WriteLog(L"[Recorder] ï¿½ï¿½Ê±ï¿½Ä¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½");
 }
 
 void WasapiRecorder::MicRecordThreadProc() {
-    WriteLog(L"[MicThread] Âó¿Ë·çÂ¼ÒôÏß³ÌÆô¶¯¡£");
+    WriteLog(L"[MicThread] ï¿½ï¿½Ë·ï¿½Â¼ï¿½ï¿½ï¿½ß³ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½");
     RecordLoop(true);
-    WriteLog(L"[MicThread] Âó¿Ë·çÂ¼ÒôÏß³Ì½áÊø¡£");
+    WriteLog(L"[MicThread] ï¿½ï¿½Ë·ï¿½Â¼ï¿½ï¿½ï¿½ß³Ì½ï¿½ï¿½ï¿½ï¿½ï¿½");
 }
 
 void WasapiRecorder::SpeakerRecordThreadProc() {
-    WriteLog(L"[SpeakerThread] ÑïÉùÆ÷Â¼ÒôÏß³ÌÆô¶¯¡£");
+    WriteLog(L"[SpeakerThread] ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Â¼ï¿½ï¿½ï¿½ß³ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½");
     RecordLoop(false);
-    WriteLog(L"[SpeakerThread] ÑïÉùÆ÷Â¼ÒôÏß³Ì½áÊø¡£");
+    WriteLog(L"[SpeakerThread] ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Â¼ï¿½ï¿½ï¿½ß³Ì½ï¿½ï¿½ï¿½ï¿½ï¿½");
 }
 
 void WasapiRecorder::RecordLoop(bool isMic) {
@@ -151,7 +151,7 @@ void WasapiRecorder::RecordLoop(bool isMic) {
         hr = pAudioClient->GetMixFormat(&pWfx);
         if (FAILED(hr)) break;
 
-        WriteLog(L"%s »ñÈ¡µ½Éè±¸Ô­Ê¼ÒôÆµ¸ñÊ½ - ¸ñÊ½ÀàĞÍ: %d, Î»Éî: %d, ÉùµÀ: %d, ²ÉÑùÂÊ: %d",
+        WriteLog(L"%s ï¿½ï¿½È¡ï¿½ï¿½ï¿½è±¸Ô­Ê¼ï¿½ï¿½Æµï¿½ï¿½Ê½ - ï¿½ï¿½Ê½ï¿½ï¿½ï¿½ï¿½: %d, Î»ï¿½ï¿½: %d, ï¿½ï¿½ï¿½ï¿½: %d, ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½: %d",
             logPrefix, pWfx->wFormatTag, pWfx->wBitsPerSample, pWfx->nChannels, pWfx->nSamplesPerSec);
 
         hr = pAudioClient->Initialize(AUDCLNT_SHAREMODE_SHARED, streamFlags, 10000000, 0, pWfx, NULL);
@@ -233,7 +233,7 @@ void WasapiRecorder::RecordLoop(bool isMic) {
                             dataSize += bytesWritten;
                         }
                         else {
-                            WriteLog(L"%s ¾¯¸æ£º½ÓÊÕµ½²»Ö§³ÖµÄÒôÆµ¸ñÊ½£¬ÒÑÌø¹ıÊı¾İ°ü¡£", logPrefix);
+                            WriteLog(L"%s ï¿½ï¿½ï¿½æ£ºï¿½ï¿½ï¿½Õµï¿½ï¿½ï¿½Ö§ï¿½Öµï¿½ï¿½ï¿½Æµï¿½ï¿½Ê½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½İ°ï¿½ï¿½ï¿½", logPrefix);
                         }
                     }
                 }
@@ -276,10 +276,10 @@ void WasapiRecorder::RecordLoop(bool isMic) {
 
 void WasapiRecorder::RunFFmpegAndLog(const std::wstring& cmdLine) {
     std::wstring realCmd = cmdLine + L" 2>&1";
-    WriteLog(L"[FFmpeg] Ö´ĞĞÃüÁî: %s", realCmd.c_str());
+    WriteLog(L"[FFmpeg] Ö´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½: %s", realCmd.c_str());
     FILE* pipe = _wpopen(realCmd.c_str(), L"rt, ccs=UTF-8");
     if (!pipe) {
-        WriteLog(L"[FFmpeg] Æô¶¯Ê§°Ü£¬_wpopen·µ»Ønull¡£");
+        WriteLog(L"[FFmpeg] ï¿½ï¿½ï¿½Ê§ï¿½Ü£ï¿½_wpopenï¿½ï¿½ï¿½ï¿½nullï¿½ï¿½");
         return;
     }
     wchar_t buf[512];
@@ -306,7 +306,7 @@ int WasapiRecorder::GetRecordingDuration() const {
 DWORD WasapiRecorder::GetCurrentFileSize() const {
     if (!m_isRecording) return 0;
     
-    // è·å–ä¸¤ä¸ªä¸´æ—¶WAVæ–‡ä»¶çš„æ€»å¤§å°
+    // è·å–ä¸¤ä¸ªä¸´æ—¶WAVæ–‡ä»¶çš„æ€»å¤§ï¿½?
     DWORD totalSize = 0;
     WIN32_FILE_ATTRIBUTE_DATA fileInfo;
     

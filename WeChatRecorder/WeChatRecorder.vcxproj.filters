@@ -72,6 +72,9 @@
     <ClInclude Include="config_manager.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="lame_recorder.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="WeChatRecorder.cpp">
@@ -117,6 +120,9 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="config_manager.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="lame_recorder.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>

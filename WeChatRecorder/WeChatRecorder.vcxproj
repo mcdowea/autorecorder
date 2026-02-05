@@ -23,32 +23,32 @@
     <Keyword>Win32Proj</Keyword>
     <ProjectGuid>{e5fce939-fa83-427a-8214-9125f089c5ea}</ProjectGuid>
     <RootNamespace>WeChatRecorder</RootNamespace>
-    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
@@ -70,6 +70,12 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <IncludePath>$(WindowsSdkDir)include\$(WindowsSDKVersion)\um;$(IncludePath)</IncludePath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <LibraryPath>D:\dd\mcdowea\autorecorder\WeChatRecorder\libs\ffmpeg\lib;$(LibraryPath)</LibraryPath>
+  </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
@@ -105,13 +111,13 @@
       <PreprocessorDefinitions>_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <AdditionalIncludeDirectories>F:\C++\自动录音\自动录音_根据麦克风\WeChatRecorder\WeChatRecorder\WeChatRecorder\libs\ffmpeg\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);D:\dd\mcdowea\autorecorder\WeChatRecorder\libs\ffmpeg\include</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies);Comctl32.lib;avcodec.lib;avformat.lib;avutil.lib;avdevice.lib;avfilter.lib;swresample.lib;swscale.lib</AdditionalDependencies>
-      <AdditionalLibraryDirectories>F:\C++\自动录音\自动录音_根据麦克风\WeChatRecorder\WeChatRecorder\WeChatRecorder\libs\ffmpeg\lib</AdditionalLibraryDirectories>
+      <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies);Comctl32.lib;avcodec.lib;avformat.lib;avutil.lib;avdevice.lib;avfilter.lib;swresample.lib;swscale.lib;libmp3lame.lib</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(ProjectDir)libs\lame;D:\dd\mcdowea\autorecorder\WeChatRecorder\libs\ffmpeg\lib</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -127,6 +133,7 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>avcodec.lib;avformat.lib;avutil.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -137,6 +144,7 @@
     <ClInclude Include="device_page.h" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="general_page.h" />
+    <ClInclude Include="lame_recorder.h" />
     <ClInclude Include="libs\lame\lame.h" />
     <ClInclude Include="log.h" />
     <ClInclude Include="mic_level_sampler.h" />
@@ -157,6 +165,7 @@
     <ClCompile Include="device_enum.cpp" />
     <ClCompile Include="device_page.cpp" />
     <ClCompile Include="general_page.cpp" />
+    <ClCompile Include="lame_recorder.cpp" />
     <ClCompile Include="log.cpp" />
     <ClCompile Include="mic_level_sampler.cpp" />
     <ClCompile Include="path_page.cpp" />

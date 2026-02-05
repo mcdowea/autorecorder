@@ -39,7 +39,7 @@
 #define IDC_LABEL_STATUS                1008
 #define IDC_BTN_SETTINGS                1010
 #define IDC_LABEL_DURATION              1028
-#define IDC_LABEL_FILESIZE              1029
+//#define IDC_LABEL_FILESIZE              1029
 #define IDC_BTN_OPEN_FOLDER             1030
 #define IDC_BTN_MANUAL_RECORD           1031
 

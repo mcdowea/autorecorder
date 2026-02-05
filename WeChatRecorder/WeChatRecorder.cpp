@@ -18,7 +18,8 @@
 
 #include "resource.h"
 #include "config_manager.h"
-#include "wasapi_recorder.h"
+//#include "wasapi_recorder.h"
+#include "lame_recorder.h"
 #include "wechat_detector.h"
 #include "device_page.h"
 #include "path_page.h"
@@ -36,7 +37,8 @@
 HINSTANCE hInst;
 HWND hMainDialog = NULL;
 HWND hGeneralPage = NULL, hDevicePage = NULL, hPathPage = NULL, hAboutPage = NULL, hBlacklistPage = NULL;
-WasapiRecorder g_recorder;
+//WasapiRecorder g_recorder;
+LameRecorder g_recorder;
 HANDLE hMonitorThread = NULL;
 std::atomic<bool> monitorRunning = false;
 bool isRecording = false;
@@ -124,7 +126,7 @@ void StopRecording(HWND hWnd) {
     std::wstring statusText = isMonitorStarted ? L"已启动检测..." : L"等待中...";
     SetDlgItemText(hWnd, IDC_LABEL_STATUS, statusText.c_str());
     SetDlgItemText(hWnd, IDC_LABEL_DURATION, L"录音时长: 00:00:00");
-    SetDlgItemText(hWnd, IDC_LABEL_FILESIZE, L"文件大小: 0 KB");
+    //SetDlgItemText(hWnd, IDC_LABEL_FILESIZE, L"文件大小: 0 KB");
     UpdateTrayTip(hWnd, statusText);
 }
 
@@ -215,7 +217,7 @@ INT_PTR CALLBACK MainDialogProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM l
 
         SetDlgItemText(hDlg, IDC_LABEL_STATUS, L"等待中...");
         SetDlgItemText(hDlg, IDC_LABEL_DURATION, L"录音时长: 00:00:00");
-        SetDlgItemText(hDlg, IDC_LABEL_FILESIZE, L"文件大小: 0 KB");
+        //SetDlgItemText(hDlg, IDC_LABEL_FILESIZE, L"文件大小: 0 KB");
         UpdateTrayTip(hDlg, L"等待中...");
         return TRUE;
     }
@@ -403,17 +405,17 @@ void UpdateRecordingInfo(HWND hWnd) {
     SetDlgItemText(hWnd, IDC_LABEL_DURATION, durationText);
     
     // 获取文件大小
-    DWORD fileSize = g_recorder.GetCurrentFileSize();
-    wchar_t fileSizeText[64];
-    
-    if (fileSize < 1024) {
-        swprintf_s(fileSizeText, L"文件大小: %u B", fileSize);
-    } else if (fileSize < 1024 * 1024) {
-        swprintf_s(fileSizeText, L"文件大小: %.2f KB", fileSize / 1024.0);
-    } else {
-        swprintf_s(fileSizeText, L"文件大小: %.2f MB", fileSize / (1024.0 * 1024.0));
-    }
-    SetDlgItemText(hWnd, IDC_LABEL_FILESIZE, fileSizeText);
+    //DWORD fileSize = g_recorder.GetCurrentFileSize();
+    //wchar_t fileSizeText[64];
+    //
+    //if (fileSize < 1024) {
+    //    swprintf_s(fileSizeText, L"文件大小: %u B", fileSize);
+    //} else if (fileSize < 1024 * 1024) {
+    //    swprintf_s(fileSizeText, L"文件大小: %.2f KB", fileSize / 1024.0);
+    //} else {
+    //    swprintf_s(fileSizeText, L"文件大小: %.2f MB", fileSize / (1024.0 * 1024.0));
+    //}
+    //SetDlgItemText(hWnd, IDC_LABEL_FILESIZE, fileSizeText);
 }
 
 // 打开录音文件所在文件夹

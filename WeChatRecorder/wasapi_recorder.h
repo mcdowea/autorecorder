@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 #include <string>
 #include <thread>
 #include <atomic>
@@ -11,7 +11,7 @@ public:
     WasapiRecorder();
     ~WasapiRecorder();
 
-    // --- ºËÐÄÐÞ¸´µã£ºStart º¯ÊýÏÖÔÚ½ÓÊÕÒôÁ¿°Ù·Ö±È ---
+    // --- ï¿½ï¿½ï¿½ï¿½ï¿½Þ¸ï¿½ï¿½ã£ºStart ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ú½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ù·Ö±ï¿½ ---
     bool Start(const std::wstring& filename,
         const std::wstring& inputDeviceId,
         const std::wstring& outputDeviceId,

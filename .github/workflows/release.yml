@@ -57,8 +57,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libasound2-dev pkg-config
 
-      - name: Build
-        run: cargo build --release --target ${{ matrix.target }} --verbose
+      - name: Build CLI
+        run: cargo build --release --target ${{ matrix.target }} --bin auto-recorder --verbose
+        
+      - name: Build GUI (Windows only)
+        if: matrix.os == 'windows-latest'
+        run: cargo build --release --target ${{ matrix.target }} --bin auto-recorder-gui --verbose
         
       - name: Test binary (Unix)
         if: matrix.os != 'windows-latest'
@@ -82,11 +86,26 @@ jobs:
           mkdir -p release
           cp target/${{ matrix.target }}/release/${{ matrix.artifact_name }} release/${{ matrix.asset_name }}
 
+      - name: Rename GUI binary (Windows only)
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          if [ -f "target/${{ matrix.target }}/release/auto-recorder-gui.exe" ]; then
+            cp target/${{ matrix.target }}/release/auto-recorder-gui.exe release/auto-recorder-gui-${{ matrix.target }}.exe
+          fi
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.asset_name }}
           path: release/${{ matrix.asset_name }}
+          
+      - name: Upload GUI artifact (Windows only)
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: auto-recorder-gui-${{ matrix.target }}
+          path: release/auto-recorder-gui-${{ matrix.target }}.exe
 
   release:
     name: Create Release

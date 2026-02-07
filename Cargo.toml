@@ -1,9 +1,9 @@
 [package]
 name = "auto-recorder"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["Auto Recorder Team"]
-description = "Automatic audio recorder for microphone and speakers"
+description = "Automatic audio recorder for microphone and speakers with GUI"
 license = "MIT"
 repository = "https://github.com/yourusername/auto-recorder"
 
@@ -22,6 +22,11 @@ crossbeam-channel = "0.5"
 parking_lot = "0.12"
 clap = { version = "4.4", features = ["derive"] }
 ctrlc = "3.4"
+
+# GUI dependencies
+eframe = "0.25"
+egui = "0.25"
+rfd = "0.13"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.52", features = [
@@ -43,6 +48,6 @@ strip = true
 name = "auto-recorder"
 path = "src/main.rs"
 
-# Windows 配置 - 保持控制台窗口
-[target.'cfg(windows)'.build]
-rustflags = ["-C", "link-arg=/SUBSYSTEM:CONSOLE"]
+[[bin]]
+name = "auto-recorder-gui"
+path = "src/gui.rs"

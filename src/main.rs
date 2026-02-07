@@ -2,12 +2,12 @@ mod audio_capture;
 mod config;
 mod mp3_encoder;
 mod process_monitor;
-mod recorder;
+mod recorder_core;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use config::Config;
-use recorder::Recorder;
+use recorder_core::Recorder;
 use std::path::PathBuf;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 

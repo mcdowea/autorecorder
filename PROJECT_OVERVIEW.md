@@ -1,18 +1,25 @@
 # 项目文件总览
 
-## 📦 完整的自动录音程序
+## 📦 完整的自动录音程序（仅支持 Windows）
 
-这是一个使用纯 Rust 实现的自动录音程序，无需 FFmpeg 和 lame_enc.dll 等外部依赖。
+这是一个使用纯 Rust 实现的自动录音程序，无需 FFmpeg 和 lame_enc.dll 等外部依赖。专门为 Windows 平台优化，使用 WASAPI Loopback 技术完美捕获系统音频。
 
 ### 🎯 核心功能
 
-✅ **同时录制麦克风和扬声器**  
+✅ **同时录制麦克风和扬声器**（WASAPI Loopback）  
 ✅ **自动检测通话软件**（微信、QQ、飞书、Skype 等）  
 ✅ **自动开始/停止录音**  
 ✅ **纯 Rust MP3 编码**  
 ✅ **可配置音质参数**（采样率、比特率、质量）  
 ✅ **图形界面 + 命令行**  
 ✅ **GitHub Actions 自动发布**  
+
+### 🪟 Windows 专属特性
+
+- **WASAPI Loopback**: 完美捕获系统播放的所有音频
+- **立体声混音**: 自动使用 Windows 立体声混音设备
+- **无驱动依赖**: 无需安装任何额外音频驱动
+- **本地化支持**: 支持中文 Windows 环境  
 
 ---
 
@@ -200,17 +207,11 @@ monitored_apps = [
 ### 必需工具
 - Rust 1.70+
 - Cargo
+- Windows 10 或更高版本
 
-### 平台依赖
-
-**Windows**: 无额外依赖
-
-**Linux**:
-```bash
-sudo apt-get install libasound2-dev pkg-config
-```
-
-**macOS**: 无额外依赖
+### Windows 依赖
+- Visual Studio Build Tools（Rust 安装时会自动提示）
+- 无需其他额外依赖
 
 ---
 
@@ -226,12 +227,9 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-自动构建平台：
-- ✅ Windows x64
-- ✅ Windows x86
-- ✅ macOS Intel
-- ✅ macOS Apple Silicon
-- ✅ Linux x64
+自动构建版本：
+- ✅ Windows x64 (x86_64-pc-windows-msvc)
+- ✅ Windows x86 (i686-pc-windows-msvc)
 
 构建完成后自动创建 GitHub Release。
 

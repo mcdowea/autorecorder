@@ -1,39 +1,42 @@
-# 自动录音程序 (Auto Audio Recorder)
+# Auto Audio Recorder (Windows Only)
 
 [![Build and Release](https://github.com/yourusername/auto-audio-recorder/actions/workflows/release.yml/badge.svg)](https://github.com/yourusername/auto-audio-recorder/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-一个功能强大的自动录音程序，使用纯 Rust 实现，支持自动检测通话并录音，将音频保存为 MP3 格式。
+A powerful automatic audio recording program implemented in pure Rust, supports automatic detection of calls and records audio in MP3 format. **Windows Only**
 
-## ✨ 主要功能
+## ✨ Main Features
 
-- 🎙️ **双通道录音**: 同时录制麦克风和扬声器音频
-- 🤖 **自动检测**: 自动检测微信、QQ、飞书、Skype 等通话软件
-- 🎵 **MP3 编码**: 纯 Rust 实现的 MP3 编码，无需外部依赖
-- ⚙️ **高度可配置**: 自定义采样率、比特率、质量等参数
-- 🖥️ **图形界面**: 提供易用的 GUI 界面
-- 📝 **命令行支持**: 支持后台运行和手动控制
-- 🔄 **跨平台**: 支持 Windows、macOS、Linux
+- 🎙️ **Dual Channel Recording**: Simultaneously record microphone and speaker audio
+- 🤖 **Auto Detection**: Automatically detect WeChat, QQ, Lark, Skype and other call software
+- 🎵 **MP3 Encoding**: Pure Rust MP3 encoding, no external dependencies needed
+- ⚙️ **Highly Configurable**: Customize sample rate, bitrate, quality and other parameters
+- 🖥️ **Graphical Interface**: Easy-to-use GUI interface
+- 📝 **Command Line Support**: Support background running and manual control
+- 🪟 **Windows Platform**: Optimized for Windows with WASAPI Loopback support
 
-## 🚀 快速开始
+## 🚀 Quick Start
 
-### 安装
+### Installation
 
-#### 从发布页面下载
+#### Download from Releases
 
-访问 [Releases](https://github.com/yourusername/auto-audio-recorder/releases) 页面下载适合您系统的预编译二进制文件。
+Visit [Releases](https://github.com/yourusername/auto-audio-recorder/releases) to download the pre-compiled binary:
 
-#### 从源码编译
+- Windows x64: `auto-audio-recorder-windows-x64.exe`
+- Windows x86: `auto-audio-recorder-windows-x86.exe`
+
+#### Build from Source
 
 ```bash
-# 克隆仓库
+# Clone repository
 git clone https://github.com/yourusername/auto-audio-recorder.git
 cd auto-audio-recorder
 
-# 编译
+# Build
 cargo build --release
 
-# 编译后的程序位于 target/release/auto-audio-recorder
+# The compiled program is in target/release/auto-audio-recorder.exe
 ```
 
 ### 使用方法

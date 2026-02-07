@@ -1,8 +1,8 @@
-# 自动录音程序
+# 自动录音程序（仅支持 Windows）
 
 [English](README.md) | 简体中文
 
-一个功能强大的自动录音程序，使用纯 Rust 实现，无需 FFmpeg 和 lame_enc.dll，支持自动检测通话并录音，将音频保存为 MP3 格式。
+一个功能强大的自动录音程序，使用纯 Rust 实现，无需 FFmpeg 和 lame_enc.dll，支持自动检测通话并录音，将音频保存为 MP3 格式。**仅支持 Windows 平台**
 
 ## ✨ 核心特性
 
@@ -12,25 +12,20 @@
 - ⚙️ **高度可配置**：自定义采样率、比特率、编码质量
 - 🖥️ **友好图形界面**：简单易用的 GUI 界面
 - 📝 **完整命令行支持**：支持后台运行和脚本自动化
-- 🔄 **跨平台支持**：Windows、macOS、Linux 全平台
+- 🪟 **Windows 优化**：使用 WASAPI Loopback 技术完美捕获系统音频
 
 ## 📦 安装
 
 ### 方式一：下载预编译版本
 
-从 [Releases](https://github.com/yourusername/auto-audio-recorder/releases) 下载对应平台的可执行文件：
+从 [Releases](https://github.com/yourusername/auto-audio-recorder/releases) 下载对应版本的可执行文件：
 
-- Windows: `auto-audio-recorder-windows-x64.exe`
-- macOS Intel: `auto-audio-recorder-macos-x64`
-- macOS Apple Silicon: `auto-audio-recorder-macos-arm64`
-- Linux: `auto-audio-recorder-linux-x64`
+- Windows x64: `auto-audio-recorder-windows-x64.exe`
+- Windows x86: `auto-audio-recorder-windows-x86.exe`
 
 ### 方式二：从源码编译
 
 ```bash
-# 安装 Rust（如果还没有）
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
 # 克隆仓库
 git clone https://github.com/yourusername/auto-audio-recorder.git
 cd auto-audio-recorder
@@ -38,7 +33,7 @@ cd auto-audio-recorder
 # 编译（发布版本）
 cargo build --release
 
-# 可执行文件在 target/release/ 目录
+# 可执行文件在 target/release/auto-audio-recorder.exe
 ```
 
 详细编译说明请查看 [BUILD.md](BUILD.md)

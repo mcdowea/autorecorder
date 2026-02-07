@@ -157,31 +157,28 @@ impl Recorder {
         mic_stream.play()?;
         info!("麦克风流已启动");
         
-        // Windows 下捕获扬声器
-        #[cfg(target_os = "windows")]
-        let speaker_stream = {
-            match windows_loopback::get_loopback_device() {
-                Ok(device) => {
-                    info!("扬声器设备: {:?}", device.name());
-                    match windows_loopback::create_loopback_stream(
-                        &device,
-                        Arc::clone(&self.speaker_buffer),
-                    ) {
-                        Ok(stream) => {
-                            stream.play()?;
-                            info!("扬声器 Loopback 流已启动");
-                            Some(stream)
-                        }
-                        Err(e) => {
-                            warn!("无法创建扬声器捕获流: {}", e);
-                            None
-                        }
+        // 捕获扬声器（WASAPI Loopback）
+        let speaker_stream = match windows_loopback::get_loopback_device() {
+            Ok(device) => {
+                info!("扬声器设备: {:?}", device.name());
+                match windows_loopback::create_loopback_stream(
+                    &device,
+                    Arc::clone(&self.speaker_buffer),
+                ) {
+                    Ok(stream) => {
+                        stream.play()?;
+                        info!("扬声器 Loopback 流已启动");
+                        Some(stream)
+                    }
+                    Err(e) => {
+                        warn!("无法创建扬声器捕获流: {}", e);
+                        None
                     }
                 }
-                Err(e) => {
-                    warn!("无法获取扬声器设备: {}", e);
-                    None
-                }
+            }
+            Err(e) => {
+                warn!("无法获取扬声器设备: {}", e);
+                None
             }
         };
         

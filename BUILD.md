@@ -1,4 +1,4 @@
-# 构建说明
+# 构建说明（仅 Windows）
 
 ## 环境准备
 
@@ -13,34 +13,11 @@ rustc --version
 cargo --version
 ```
 
-### macOS
+### 系统要求
 
-```bash
-# 安装 Rust
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
-# 验证安装
-rustc --version
-cargo --version
-```
-
-### Linux (Ubuntu/Debian)
-
-```bash
-# 安装 Rust
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
-# 安装依赖
-sudo apt-get update
-sudo apt-get install -y \
-    libasound2-dev \
-    pkg-config \
-    build-essential
-
-# 验证安装
-rustc --version
-cargo --version
-```
+- Windows 10 或更高版本
+- Visual Studio Build Tools（Rust 安装时会提示）
+- 支持 WASAPI 的音频驱动
 
 ## 编译项目
 
@@ -58,7 +35,7 @@ cargo build
 cargo run
 
 # 运行并查看日志
-RUST_LOG=debug cargo run
+$env:RUST_LOG="debug"; cargo run
 ```
 
 ### 发布模式
@@ -68,34 +45,21 @@ RUST_LOG=debug cargo run
 cargo build --release
 
 # 可执行文件位于
-# Windows: target/release/auto-audio-recorder.exe
-# macOS/Linux: target/release/auto-audio-recorder
+# target/release/auto-audio-recorder.exe
 ```
 
-### 交叉编译
-
-#### Windows 上编译其他平台
+### 指定目标平台
 
 ```powershell
-# 安装目标平台工具链
-rustup target add x86_64-unknown-linux-gnu
-rustup target add x86_64-apple-darwin
+# 安装目标工具链
+rustup target add x86_64-pc-windows-msvc
+rustup target add i686-pc-windows-msvc
 
-# 编译 Linux 版本（需要额外工具）
-cargo build --release --target x86_64-unknown-linux-gnu
-```
+# 编译 x64 版本
+cargo build --release --target x86_64-pc-windows-msvc
 
-#### Linux 上编译 Windows 版本
-
-```bash
-# 安装 MinGW
-sudo apt-get install mingw-w64
-
-# 安装目标
-rustup target add x86_64-pc-windows-gnu
-
-# 编译
-cargo build --release --target x86_64-pc-windows-gnu
+# 编译 x86 版本
+cargo build --release --target i686-pc-windows-msvc
 ```
 
 ## 运行测试
@@ -170,24 +134,19 @@ cargo update --aggressive
 - 下载并安装 "Build Tools for Visual Studio"
 - 选择 "C++ build tools" 工作负载
 
-### Linux 音频库缺失
-
-```bash
-# Ubuntu/Debian
-sudo apt-get install libasound2-dev
-
-# Fedora/RHEL
-sudo dnf install alsa-lib-devel
-
-# Arch Linux
-sudo pacman -S alsa-lib
-```
-
-### macOS 权限问题
+### 音频权限问题
 
 运行时可能需要授予麦克风权限：
-1. 系统偏好设置 → 安全性与隐私 → 隐私 → 麦克风
-2. 勾选终端或您的应用程序
+1. 设置 → 隐私 → 麦克风
+2. 勾选允许应用访问麦克风
+
+### WASAPI 错误
+
+如果无法捕获扬声器音频：
+1. 右键任务栏音量图标 → 声音设置
+2. 声音控制面板 → 录制
+3. 右键空白处 → 显示已禁用的设备
+4. 启用"立体声混音"设备
 
 ## 优化建议
 

@@ -123,8 +123,7 @@ impl AudioCapture {
     }
 }
 
-/// Windows 环境下捕获扬声器输出（使用 WASAPI Loopback）
-#[cfg(target_os = "windows")]
+/// 捕获扬声器输出（使用 WASAPI Loopback）
 pub mod windows_loopback {
     use super::*;
     

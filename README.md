@@ -1,236 +1,171 @@
-# Auto Audio Recorder (Windows Only)
+# Auto Recorder 🎙️
 
-[![Build and Release](https://github.com/yourusername/auto-audio-recorder/actions/workflows/release.yml/badge.svg)](https://github.com/yourusername/auto-audio-recorder/actions/workflows/release.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+自动录音程序，支持同时录制麦克风和扬声器音频，检测通话应用并自动开始/停止录音。
 
-A powerful automatic audio recording program implemented in pure Rust, supports automatic detection of calls and records audio in MP3 format. **Windows Only**
+## ✨ 功能特性
 
-## ✨ Main Features
+- 🎤 **双音频源录制**：同时捕获麦克风和扬声器音频并混合
+- 🤖 **智能自动录音**：检测微信、QQ、飞书、Skype 等通话应用，自动开始/停止录音
+- 📝 **手动录音模式**：支持按需手动录音
+- 🎵 **MP3 编码**：纯 Rust 实现，使用 `mp3lame` 编码，无需外部依赖
+- ⚙️ **高度可配置**：自定义采样率、比特率、质量等参数
+- 🔇 **静音检测**：自动检测静音并停止录音
+- 💾 **自动保存**：录音自动保存为带时间戳的 MP3 文件
 
-- 🎙️ **Dual Channel Recording**: Simultaneously record microphone and speaker audio
-- 🤖 **Auto Detection**: Automatically detect WeChat, QQ, Lark, Skype and other call software
-- 🎵 **MP3 Encoding**: Pure Rust MP3 encoding, no external dependencies needed
-- ⚙️ **Highly Configurable**: Customize sample rate, bitrate, quality and other parameters
-- 🖥️ **Graphical Interface**: Easy-to-use GUI interface
-- 📝 **Command Line Support**: Support background running and manual control
-- 🪟 **Windows Platform**: Optimized for Windows with WASAPI Loopback support
+## 🚀 快速开始
 
-## 🚀 Quick Start
+### 安装依赖
 
-### Installation
+**Windows 用户需要先启用"立体声混音"设备：**
 
-#### Download from Releases
+1. 右键点击任务栏音量图标 → 声音设置
+2. 高级 → 更多声音设置
+3. 录制标签页
+4. 右键空白处 → 显示已禁用的设备
+5. 找到"立体声混音"或"Stereo Mix"
+6. 右键 → 启用
 
-Visit [Releases](https://github.com/yourusername/auto-audio-recorder/releases) to download the pre-compiled binary:
-
-- Windows x64: `auto-audio-recorder-windows-x64.exe`
-- Windows x86: `auto-audio-recorder-windows-x86.exe`
-
-#### Build from Source
+### 构建
 
 ```bash
-# Clone repository
-git clone https://github.com/yourusername/auto-audio-recorder.git
-cd auto-audio-recorder
+# 克隆仓库
+git clone https://github.com/yourusername/auto-recorder.git
+cd auto-recorder
 
-# Build
+# 构建
 cargo build --release
 
-# The compiled program is in target/release/auto-audio-recorder.exe
+# 运行
+./target/release/auto-recorder --help
 ```
 
-### 使用方法
+## 📖 使用方法
 
-#### 1. GUI 模式（推荐）
+### 1. 生成默认配置文件
 
 ```bash
-# 启动图形界面
-./auto-audio-recorder gui
-
-# 或直接运行（默认启动 GUI）
-./auto-audio-recorder
+auto-recorder gen-config
 ```
 
-#### 2. 自动录音模式
+这将创建 `config.json` 文件，内容如下：
 
-```bash
-# 后台运行，自动检测并录音
-./auto-audio-recorder run
-
-# 禁用自动录音（仅启动录音器）
-./auto-audio-recorder run --no-auto
-```
-
-#### 3. 手动录音
-
-```bash
-# 开始录音，按 Ctrl+C 停止
-./auto-audio-recorder start
-```
-
-#### 4. 查看配置
-
-```bash
-# 显示当前配置
-./auto-audio-recorder config
-
-# 列出音频设备
-./auto-audio-recorder devices
-```
-
-## ⚙️ 配置
-
-配置文件位于：
-- **Windows**: `%APPDATA%\auto-audio-recorder\config.toml`
-- **macOS**: `~/Library/Application Support/auto-audio-recorder/config.toml`
-- **Linux**: `~/.config/auto-audio-recorder/config.toml`
-
-### 配置示例
-
-```toml
-output_dir = "C:\\Users\\YourName\\Documents\\AudioRecordings"
-auto_record = true
-min_call_duration = 5
-
-[audio]
-sample_rate = 44100
-bitrate = 128
-channels = 2
-quality = 2
-
-monitored_apps = [
+```json
+{
+  "output_dir": "recordings",
+  "sample_rate": 44100,
+  "bit_rate": 128,
+  "quality": 2,
+  "auto_recording": true,
+  "monitored_apps": [
     "WeChat.exe",
     "QQ.exe",
     "Lark.exe",
-    "Feishu.exe",
+    "feishu.exe",
     "Skype.exe",
     "Teams.exe",
     "Zoom.exe",
-    "DingTalk.exe"
-]
+    "Discord.exe"
+  ],
+  "silence_threshold": 0.01,
+  "silence_duration": 3
+}
 ```
 
-### 配置说明
+### 2. 列出音频设备
+
+```bash
+auto-recorder list-devices
+```
+
+### 3. 自动录音模式
+
+```bash
+# 使用默认配置
+auto-recorder auto
+
+# 使用自定义配置
+auto-recorder --config my-config.json auto
+
+# 启用详细日志
+auto-recorder --verbose auto
+```
+
+程序将监控指定的通话应用，当检测到通话时自动开始录音，通话结束后自动停止。
+
+### 4. 手动录音模式
+
+```bash
+# 使用默认设置
+auto-recorder record
+
+# 自定义参数
+auto-recorder record --sample-rate 48000 --bit-rate 192 --quality 0
+
+# 指定输出目录
+auto-recorder record --output ./my-recordings
+
+# 按 Ctrl+C 停止录音
+```
+
+## ⚙️ 配置说明
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `output_dir` | 字符串 | 文档/AudioRecordings | 录音文件保存目录 |
-| `auto_record` | 布尔值 | true | 是否启用自动录音 |
-| `min_call_duration` | 整数 | 5 | 最小通话时长（秒），少于此时长不保存 |
-| `audio.sample_rate` | 整数 | 44100 | 采样率 (Hz) |
-| `audio.bitrate` | 整数 | 128 | 比特率 (kbps) |
-| `audio.channels` | 整数 | 2 | 声道数 (1=单声道, 2=立体声) |
-| `audio.quality` | 整数 | 2 | MP3 质量 (0-9, 0 为最高质量) |
-| `monitored_apps` | 数组 | [...] | 要监控的应用程序列表 |
-
-## 🎯 支持的应用
-
-默认支持以下通话应用的自动检测：
-
-- 微信 (WeChat)
-- QQ
-- 飞书 (Lark/Feishu)
-- Skype
-- Microsoft Teams
-- Zoom
-- 钉钉 (DingTalk)
-
-您可以在配置文件中添加更多应用。
+| `output_dir` | 字符串 | `"recordings"` | 录音文件保存目录 |
+| `sample_rate` | 整数 | `44100` | 采样率 (Hz)，推荐：44100 或 48000 |
+| `bit_rate` | 整数 | `128` | MP3 比特率 (kbps)，推荐：128-320 |
+| `quality` | 整数 | `2` | MP3 质量，0 最好，9 最差 |
+| `auto_recording` | 布尔 | `true` | 是否启用自动录音 |
+| `monitored_apps` | 数组 | 见上文 | 要监控的应用程序列表 |
+| `silence_threshold` | 浮点 | `0.01` | 静音检测阈值 (0.0-1.0) |
+| `silence_duration` | 整数 | `3` | 静音持续多少秒后停止录音 |
 
 ## 🛠️ 技术栈
 
-- **音频捕获**: [cpal](https://github.com/RustAudio/cpal)
-- **MP3 编码**: [mp3lame-encoder](https://github.com/nfam/lame.rs)
-- **异步运行时**: [Tokio](https://tokio.rs/)
-- **GUI 框架**: [egui](https://github.com/emilk/egui)
-- **进程监控**: [sysinfo](https://github.com/GuillaumeGomez/sysinfo)
+- **音频捕获**：[cpal](https://github.com/RustAudio/cpal) - 跨平台音频 I/O
+- **MP3 编码**：[mp3lame](https://github.com/mp3lame/mp3lame) - LAME MP3 编码器
+- **进程监控**：Windows API (仅 Windows)
+- **异步运行时**：[tokio](https://tokio.rs/)
+- **命令行解析**：[clap](https://github.com/clap-rs/clap)
 
 ## 📋 系统要求
 
-### Windows
-- Windows 10 或更高版本
-- 支持 WASAPI 的音频驱动
+- **操作系统**：Windows 10/11（自动录音功能）, Linux, macOS（仅手动录音）
+- **Rust**：1.70+
+- **音频设备**：需要麦克风和扬声器/耳机
 
-### macOS
-- macOS 10.12 或更高版本
+## 🐛 故障排除
 
-### Linux
-- ALSA 或 PulseAudio
+### Windows 上无法录制扬声器音频
 
-## 🔧 开发
+确保已启用"立体声混音"设备（参见上文安装步骤）。
 
-### 构建要求
+### 录音文件为空或很小
 
-- Rust 1.70 或更高版本
-- Cargo
+1. 检查音频设备是否正常工作
+2. 调整 `silence_threshold` 参数
+3. 使用 `--verbose` 查看详细日志
 
-### 编译
+### 检测不到通话应用
 
-```bash
-# 开发构建
-cargo build
+1. 确认应用名称在 `monitored_apps` 列表中
+2. 使用任务管理器查看进程名称是否正确
+3. 某些应用可能使用不同的进程名
 
-# 发布构建
-cargo build --release
+## 📄 许可证
 
-# 运行测试
-cargo test
-```
-
-### 代码结构
-
-```
-src/
-├── main.rs              # 主入口
-├── config.rs            # 配置管理
-├── audio_capture.rs     # 音频捕获
-├── encoder.rs           # MP3 编码
-├── recorder.rs          # 录音器核心
-├── process_monitor.rs   # 进程监控
-└── gui.rs              # GUI 界面
-```
-
-## 📝 许可证
-
-本项目采用 MIT 许可证。详见 [LICENSE](LICENSE) 文件。
+MIT License
 
 ## 🤝 贡献
 
 欢迎提交 Issue 和 Pull Request！
 
-1. Fork 本仓库
-2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 开启 Pull Request
+## ⚠️ 免责声明
 
-## ⚠️ 注意事项
+本软件仅供学习和个人使用。录音他人通话可能违反当地法律法规，请确保：
 
-1. **隐私**: 录音功能可能涉及隐私问题，请确保在录音前获得所有相关方的同意
-2. **法律**: 在某些地区，未经许可录音可能违法，请遵守当地法律法规
-3. **资源**: 长时间录音会占用磁盘空间，请定期清理旧文件
-4. **权限**: 某些系统需要授予麦克风和音频录制权限
+1. 获得所有参与者的明确同意
+2. 遵守当地隐私和录音相关法律
+3. 不将录音用于非法目的
 
-## 🐛 已知问题
-
-- Linux 下扬声器捕获可能需要额外配置 PulseAudio
-- macOS 可能需要在系统偏好设置中授予麦克风权限
-
-## 📮 联系方式
-
-如有问题或建议，请通过以下方式联系：
-
-- 提交 [Issue](https://github.com/yourusername/auto-audio-recorder/issues)
-- 发送邮件至: your.email@example.com
-
-## 🙏 致谢
-
-感谢所有开源项目的贡献者，特别是：
-
-- LAME MP3 编码器团队
-- Rust 音频社区
-- 所有依赖库的维护者
-
----
-
-**免责声明**: 本软件仅供学习和合法用途使用。使用者需自行承担使用本软件的所有法律责任。
+使用本软件即表示您同意自行承担所有法律责任。

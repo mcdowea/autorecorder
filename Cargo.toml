@@ -1,56 +1,46 @@
 [package]
-name = "auto-audio-recorder"
+name = "auto-recorder"
 version = "0.1.0"
 edition = "2021"
-authors = ["Your Name <your.email@example.com>"]
-description = "Automatic audio recorder for calls with MP3 encoding (Windows only)"
+authors = ["Auto Recorder Team"]
+description = "Automatic audio recorder for microphone and speakers"
 license = "MIT"
+repository = "https://github.com/yourusername/auto-recorder"
 
 [dependencies]
-# Audio capture
 cpal = "0.15"
-# MP3 encoding (pure Rust)
-mp3lame-encoder = "0.2"
-# Async runtime
-tokio = { version = "1.35", features = ["full"] }
-# Configuration
+mp3lame = "0.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-toml = "0.8"
-# Logging
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-# Date and time
 chrono = "0.4"
-# Error handling
 anyhow = "1.0"
 thiserror = "1.0"
-# Audio resampling
-rubato = "0.15"
-# System process detection
-sysinfo = "0.30"
-# Command line
+tokio = { version = "1.35", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+crossbeam-channel = "0.5"
+parking_lot = "0.12"
+dasp = { version = "0.11", features = ["signal", "interpolate"] }
+ringbuf = "0.3"
 clap = { version = "4.4", features = ["derive"] }
-# File system
-dirs = "5.0"
-# Windows API
+ctrlc = "3.4"
+
+[target.'cfg(windows)'.dependencies]
 windows = { version = "0.52", features = [
-    "Win32_Media_Audio",
-    "Win32_System_Com",
     "Win32_Foundation",
     "Win32_System_Threading",
-]}
-
-# GUI (optional feature)
-eframe = { version = "0.28", optional = true }
-egui = { version = "0.28", optional = true }
-
-[features]
-default = ["gui"]
-gui = ["eframe", "egui"]
+    "Win32_System_ProcessStatus",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_Media_Audio",
+] }
+widestring = "1.0"
 
 [profile.release]
 opt-level = 3
 lto = true
 codegen-units = 1
 strip = true
+
+[[bin]]
+name = "auto-recorder"
+path = "src/main.rs"

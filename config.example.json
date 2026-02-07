@@ -1,0 +1,22 @@
+{
+  "output_dir": "recordings",
+  "sample_rate": 44100,
+  "bit_rate": 128,
+  "quality": 2,
+  "auto_recording": true,
+  "monitored_apps": [
+    "WeChat.exe",
+    "QQ.exe",
+    "Lark.exe",
+    "feishu.exe",
+    "Skype.exe",
+    "Teams.exe",
+    "Zoom.exe",
+    "Discord.exe",
+    "Slack.exe",
+    "钉钉.exe",
+    "DingTalk.exe"
+  ],
+  "silence_threshold": 0.01,
+  "silence_duration": 3
+}

@@ -1,258 +1,210 @@
-use crate::audio_capture::{AudioCapture, windows_loopback};
-use crate::config::{AudioConfig, RecorderConfig};
-use crate::encoder::Mp3Encoder;
-use anyhow::Result;
+use crate::audio_capture::{AudioCapture, AudioSource};
+use crate::config::Config;
+use crate::mp3_encoder::Mp3Encoder;
+use crate::process_monitor::ProcessMonitor;
+use anyhow::{Context, Result};
 use chrono::Local;
 use cpal::traits::StreamTrait;
+use crossbeam_channel::Receiver;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
-use std::time::Instant;
-use tokio::sync::RwLock;
-use tracing::{info, warn, error};
+use std::sync::Arc;
+use parking_lot::Mutex;
+use std::time::{Duration, Instant};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RecordingState {
     Idle,
     Recording,
-    Stopped,
+    Paused,
 }
 
 pub struct Recorder {
-    config: RecorderConfig,
-    state: Arc<RwLock<RecordingState>>,
-    mic_buffer: Arc<Mutex<Vec<f32>>>,
-    speaker_buffer: Arc<Mutex<Vec<f32>>>,
-    start_time: Arc<Mutex<Option<Instant>>>,
+    config: Config,
+    state: Arc<Mutex<RecordingState>>,
+    process_monitor: ProcessMonitor,
 }
 
 impl Recorder {
-    pub fn new(config: RecorderConfig) -> Result<Self> {
-        config.ensure_output_dir()?;
+    pub fn new(config: Config) -> Self {
+        let process_monitor = ProcessMonitor::new(config.monitored_apps.clone());
         
-        Ok(Self {
+        Self {
             config,
-            state: Arc::new(RwLock::new(RecordingState::Idle)),
-            mic_buffer: Arc::new(Mutex::new(Vec::new())),
-            speaker_buffer: Arc::new(Mutex::new(Vec::new())),
-            start_time: Arc::new(Mutex::new(None)),
-        })
-    }
-    
-    pub async fn get_state(&self) -> RecordingState {
-        self.state.read().await.clone()
-    }
-    
-    /// 开始录音
-    pub async fn start_recording(&self) -> Result<()> {
-        let mut state = self.state.write().await;
-        
-        if *state == RecordingState::Recording {
-            warn!("录音已在进行中");
-            return Ok(());
+            state: Arc::new(Mutex::new(RecordingState::Idle)),
+            process_monitor,
         }
-        
-        info!("开始录音...");
-        
-        // 清空缓冲区
-        self.mic_buffer.lock().unwrap().clear();
-        self.speaker_buffer.lock().unwrap().clear();
-        *self.start_time.lock().unwrap() = Some(Instant::now());
-        
-        *state = RecordingState::Recording;
-        
-        Ok(())
     }
-    
-    /// 停止录音并保存
-    pub async fn stop_recording(&self) -> Result<Option<PathBuf>> {
-        let mut state = self.state.write().await;
-        
-        if *state != RecordingState::Recording {
-            warn!("当前没有正在进行的录音");
-            return Ok(None);
-        }
-        
-        info!("停止录音...");
-        *state = RecordingState::Stopped;
-        
-        // 获取录音时长
-        let duration = self.start_time
-            .lock()
-            .unwrap()
-            .map(|t| t.elapsed().as_secs())
-            .unwrap_or(0);
-        
-        // 检查最小时长
-        if duration < self.config.min_call_duration {
-            info!("录音时长 {} 秒，少于最小时长 {} 秒，不保存", 
-                  duration, self.config.min_call_duration);
-            *state = RecordingState::Idle;
-            return Ok(None);
-        }
-        
-        // 保存录音
-        let output_path = self.save_recording().await?;
-        
-        *state = RecordingState::Idle;
-        
-        Ok(Some(output_path))
+
+    pub fn get_state(&self) -> RecordingState {
+        *self.state.lock()
     }
-    
-    /// 保存录音到文件
-    async fn save_recording(&self) -> Result<PathBuf> {
-        let mic_data = self.mic_buffer.lock().unwrap().clone();
-        let speaker_data = self.speaker_buffer.lock().unwrap().clone();
+
+    pub fn start_manual_recording(&self) -> Result<()> {
+        tracing::info!("Starting manual recording...");
+        self.record_session(false)
+    }
+
+    pub fn start_auto_monitoring(&self) -> Result<()> {
+        tracing::info!("Starting auto monitoring mode...");
         
-        info!("麦克风数据: {} 样本, 扬声器数据: {} 样本", 
-              mic_data.len(), speaker_data.len());
-        
-        if mic_data.is_empty() && speaker_data.is_empty() {
-            return Err(anyhow::anyhow!("没有可保存的音频数据"));
+        loop {
+            if self.process_monitor.is_call_active() {
+                tracing::info!("Call detected! Starting recording...");
+                *self.state.lock() = RecordingState::Recording;
+                
+                if let Err(e) = self.record_session(true) {
+                    tracing::error!("Recording session error: {}", e);
+                }
+                
+                *self.state.lock() = RecordingState::Idle;
+                tracing::info!("Call ended. Waiting for next call...");
+            }
+            
+            std::thread::sleep(Duration::from_secs(2));
         }
-        
-        // 混合音频
-        let mixed_data = Mp3Encoder::mix_channels(&mic_data, &speaker_data);
-        
+    }
+
+    fn record_session(&self, auto_mode: bool) -> Result<()> {
+        // 确保输出目录存在
+        std::fs::create_dir_all(&self.config.output_dir)?;
+
         // 生成文件名
         let timestamp = Local::now().format("%Y%m%d_%H%M%S");
         let filename = format!("recording_{}.mp3", timestamp);
         let output_path = self.config.output_dir.join(filename);
-        
-        // 编码为 MP3
-        let encoder = Mp3Encoder::new(
-            self.config.audio.sample_rate,
-            self.config.audio.channels,
-            self.config.audio.bitrate,
-            self.config.audio.quality,
-        );
-        
-        encoder.encode_to_file(&mixed_data, &output_path)?;
-        
-        info!("录音已保存到: {:?}", output_path);
-        
-        Ok(output_path)
-    }
-    
-    /// 运行录音器（捕获音频）
-    pub async fn run(
-        &self,
-        mut shutdown: tokio::sync::watch::Receiver<bool>,
-    ) -> Result<()> {
-        let audio_capture = AudioCapture::new()?;
-        
-        // 获取设备
-        let mic_device = audio_capture.get_input_device()?;
-        let mic_config = audio_capture.get_device_config(&mic_device)?;
-        
-        info!("麦克风设备: {:?}", mic_device.name());
-        
-        // 创建麦克风流
-        let mic_stream = audio_capture.create_capture_stream(
-            &mic_device,
-            &mic_config,
-            self.config.audio.sample_rate,
-            Arc::clone(&self.mic_buffer),
+
+        tracing::info!("Recording to: {:?}", output_path);
+
+        // 初始化音频捕获
+        let mut audio_capture = AudioCapture::new()?;
+        audio_capture.init_microphone()?;
+        audio_capture.init_speaker()?;
+
+        // 创建音频流
+        let (mic_stream, mic_rx) = audio_capture.create_stream(
+            AudioSource::Microphone,
+            self.config.sample_rate,
         )?;
-        
+
+        let (speaker_stream, speaker_rx) = audio_capture.create_stream(
+            AudioSource::Speaker,
+            self.config.sample_rate,
+        )?;
+
+        // 启动流
         mic_stream.play()?;
-        info!("麦克风流已启动");
-        
-        // 捕获扬声器（WASAPI Loopback）
-        let speaker_stream = match windows_loopback::get_loopback_device() {
-            Ok(device) => {
-                info!("扬声器设备: {:?}", device.name());
-                match windows_loopback::create_loopback_stream(
-                    &device,
-                    Arc::clone(&self.speaker_buffer),
-                ) {
-                    Ok(stream) => {
-                        stream.play()?;
-                        info!("扬声器 Loopback 流已启动");
-                        Some(stream)
-                    }
-                    Err(e) => {
-                        warn!("无法创建扬声器捕获流: {}", e);
-                        None
+        speaker_stream.play()?;
+
+        // 创建 MP3 编码器
+        let mut encoder = Mp3Encoder::new(
+            &output_path,
+            self.config.sample_rate,
+            self.config.bit_rate,
+            self.config.quality,
+        )?;
+
+        // 录音循环
+        let mut silence_start: Option<Instant> = None;
+        let mut total_samples = 0u64;
+
+        tracing::info!("Recording started. Press Ctrl+C to stop (manual mode)");
+
+        loop {
+            // 在自动模式下检查通话是否仍在进行
+            if auto_mode && !self.process_monitor.is_call_active() {
+                tracing::info!("Call ended, stopping recording...");
+                break;
+            }
+
+            // 混合麦克风和扬声器音频
+            let mut mixed_samples = Vec::new();
+            let mut has_audio = false;
+
+            // 从麦克风接收
+            while let Ok(samples) = mic_rx.try_recv() {
+                if mixed_samples.is_empty() {
+                    mixed_samples = samples;
+                } else {
+                    // 混合音频
+                    for (i, &sample) in samples.iter().enumerate() {
+                        if i < mixed_samples.len() {
+                            mixed_samples[i] = (mixed_samples[i] + sample) / 2.0;
+                        } else {
+                            mixed_samples.push(sample);
+                        }
                     }
                 }
+                has_audio = true;
             }
-            Err(e) => {
-                warn!("无法获取扬声器设备: {}", e);
-                None
+
+            // 从扬声器接收
+            while let Ok(samples) = speaker_rx.try_recv() {
+                if mixed_samples.is_empty() {
+                    mixed_samples = samples;
+                } else {
+                    // 混合音频
+                    for (i, &sample) in samples.iter().enumerate() {
+                        if i < mixed_samples.len() {
+                            mixed_samples[i] = (mixed_samples[i] + sample) / 2.0;
+                        } else {
+                            mixed_samples.push(sample);
+                        }
+                    }
+                }
+                has_audio = true;
             }
-        };
-        
-        // 等待关闭信号
-        let _ = shutdown.changed().await;
-        
-        info!("音频捕获已停止");
-        
-        Ok(())
-    }
-}
 
-pub struct RecorderManager {
-    recorder: Arc<Recorder>,
-    capture_handle: Option<tokio::task::JoinHandle<Result<()>>>,
-    shutdown_tx: Option<tokio::sync::watch::Sender<bool>>,
-}
+            if !mixed_samples.is_empty() {
+                // 检测静音
+                let max_amplitude = mixed_samples.iter()
+                    .map(|&s| s.abs())
+                    .fold(0.0f32, f32::max);
 
-impl RecorderManager {
-    pub fn new(config: RecorderConfig) -> Result<Self> {
-        let recorder = Arc::new(Recorder::new(config)?);
-        
-        Ok(Self {
-            recorder,
-            capture_handle: None,
-            shutdown_tx: None,
-        })
-    }
-    
-    /// 启动录音器
-    pub async fn start(&mut self) -> Result<()> {
-        if self.capture_handle.is_some() {
-            warn!("录音器已在运行");
-            return Ok(());
+                if max_amplitude < self.config.silence_threshold {
+                    if silence_start.is_none() {
+                        silence_start = Some(Instant::now());
+                    } else if let Some(start) = silence_start {
+                        if start.elapsed() > Duration::from_secs(self.config.silence_duration) {
+                            if !auto_mode {
+                                tracing::info!("Silence detected for {} seconds, stopping...", 
+                                    self.config.silence_duration);
+                                break;
+                            }
+                        }
+                    }
+                } else {
+                    silence_start = None;
+                }
+
+                // 编码样本
+                encoder.encode_samples(&mixed_samples)?;
+                total_samples += mixed_samples.len() as u64;
+
+                // 每5秒输出一次进度
+                if total_samples % (self.config.sample_rate as u64 * 5) < mixed_samples.len() as u64 {
+                    let duration_secs = total_samples / self.config.sample_rate as u64;
+                    tracing::info!("Recording... {}:{:02}", duration_secs / 60, duration_secs % 60);
+                }
+            }
+
+            if !has_audio {
+                std::thread::sleep(Duration::from_millis(10));
+            }
         }
-        
-        let (tx, rx) = tokio::sync::watch::channel(false);
-        self.shutdown_tx = Some(tx);
-        
-        let recorder = Arc::clone(&self.recorder);
-        let handle = tokio::spawn(async move {
-            recorder.run(rx).await
-        });
-        
-        self.capture_handle = Some(handle);
-        
+
+        // 完成编码
+        drop(mic_stream);
+        drop(speaker_stream);
+        encoder.finish()?;
+
+        let duration_secs = total_samples / self.config.sample_rate as u64;
+        tracing::info!(
+            "Recording completed: {:?} (duration: {}:{:02})",
+            output_path,
+            duration_secs / 60,
+            duration_secs % 60
+        );
+
         Ok(())
-    }
-    
-    /// 停止录音器
-    pub async fn stop(&mut self) -> Result<()> {
-        if let Some(tx) = self.shutdown_tx.take() {
-            let _ = tx.send(true);
-        }
-        
-        if let Some(handle) = self.capture_handle.take() {
-            handle.await??;
-        }
-        
-        Ok(())
-    }
-    
-    /// 开始录音
-    pub async fn start_recording(&self) -> Result<()> {
-        self.recorder.start_recording().await
-    }
-    
-    /// 停止录音
-    pub async fn stop_recording(&self) -> Result<Option<PathBuf>> {
-        self.recorder.stop_recording().await
-    }
-    
-    /// 获取录音状态
-    pub async fn get_state(&self) -> RecordingState {
-        self.recorder.get_state().await
     }
 }

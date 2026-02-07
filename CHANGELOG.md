@@ -1,75 +1,70 @@
-# 更新日志 (Changelog)
+# Changelog
 
-本文档记录项目的所有重要变更。
+All notable changes to this project will be documented in this file.
 
-## [0.1.0] - 2024-12-07
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-### 新增功能
-- ✨ 首次发布
-- 🎙️ 双通道音频录制（麦克风 + 扬声器）
-- 🤖 自动检测通话软件（微信、QQ、飞书、Skype 等）
-- 🎵 纯 Rust MP3 编码（无需 FFmpeg）
-- 🖥️ 图形用户界面（GUI）
-- 📝 命令行接口（CLI）
-- ⚙️ 可配置音频参数（采样率、比特率、质量）
-- 📁 自动文件管理和命名
-- 🔄 GitHub Actions 自动构建
+## [Unreleased]
 
-### 技术特性
-- 使用 WASAPI Loopback 捕获系统音频
-- 支持立体声混音
-- 异步录音处理
-- 进程监控和自动控制
-- TOML 配置文件
+### Planned
+- Linux process monitoring support
+- macOS process monitoring support
+- GUI interface
+- Hotkey control for recording
+- Audio waveform visualization
+- Support for multiple audio formats (WAV, FLAC, OGG)
+- Cloud backup integration
+- Recording file management interface
 
-### 支持的平台
-- Windows 10/11 (x64)
-- Windows 10/11 (x86)
+## [0.1.0] - 2024-02-07
 
-### 已知限制
-- 仅支持 Windows 平台
-- 需要启用"立体声混音"设备才能录制扬声器
-- 最小通话时长默认为 5 秒
+### Added
+- 🎤 Dual audio source recording (microphone + speaker)
+- 🤖 Automatic call detection and recording (Windows only)
+- 📝 Manual recording mode
+- 🎵 Pure Rust MP3 encoding using `mp3lame`
+- ⚙️ Configurable sample rate, bit rate, and quality
+- 🔇 Silence detection with configurable threshold
+- 💾 Automatic file saving with timestamps
+- 📋 Process monitoring for common call apps:
+  - WeChat
+  - QQ
+  - Feishu/Lark
+  - Skype
+  - Microsoft Teams
+  - Zoom
+  - Discord
+  - DingTalk
+- 🛠️ Command-line interface with multiple subcommands:
+  - `auto` - Auto monitoring mode
+  - `record` - Manual recording
+  - `list-devices` - List audio devices
+  - `gen-config` - Generate default config
+- 📄 Comprehensive documentation:
+  - User guide (English & Chinese)
+  - Development documentation
+  - Quick start guide
+- 🚀 GitHub Actions for automated releases
+- 🖥️ Multi-platform support:
+  - Windows (x64, x86) - Full features
+  - Linux (x64) - Manual recording only
+  - macOS (Intel, ARM) - Manual recording only
 
-### 依赖项
-- cpal 0.15 - 音频捕获
-- mp3lame-encoder 0.2 - MP3 编码
-- tokio 1.35 - 异步运行时
-- egui 0.25 - GUI 框架
-- sysinfo 0.30 - 进程监控
-- 其他辅助库
+### Technical Details
+- Cross-platform audio I/O using `cpal`
+- LAME MP3 encoder integration
+- Windows API process monitoring
+- Asynchronous runtime with `tokio`
+- Structured logging with `tracing`
+- Command-line parsing with `clap`
+- JSON configuration with `serde`
 
----
+### Known Limitations
+- Automatic recording only works on Windows
+- Requires "Stereo Mix" to be enabled on Windows
+- Some sound cards may not support loopback recording
+- No GUI interface in this version
 
-## 版本规范
-
-本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/) 规范：
-
-- **主版本号**：不兼容的 API 修改
-- **次版本号**：向下兼容的功能性新增
-- **修订号**：向下兼容的问题修正
-
-## 贡献指南
-
-如果您想为本项目做出贡献，请：
-
-1. Fork 本仓库
-2. 创建特性分支
-3. 提交您的改动
-4. 推送到分支
-5. 创建 Pull Request
-
-## 问题反馈
-
-如有问题或建议，请在 [GitHub Issues](https://github.com/yourusername/auto-audio-recorder/issues) 提交。
-
----
-
-**下一版本计划**
-
-- [ ] 添加音量控制
-- [ ] 支持更多音频格式（WAV、FLAC）
-- [ ] 录音文件加密
-- [ ] 云端同步支持
-- [ ] 降噪和音频处理
-- [ ] 多语言支持
+[Unreleased]: https://github.com/yourusername/auto-recorder/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/yourusername/auto-recorder/releases/tag/v0.1.0

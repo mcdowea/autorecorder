@@ -1,28 +1,25 @@
 # Rust
-/target
-Cargo.lock
+/target/
 **/*.rs.bk
 *.pdb
+Cargo.lock
 
-# IDE
-.vscode/
+# IDEs
 .idea/
+.vscode/
 *.swp
 *.swo
 *~
+
+# OS
 .DS_Store
+Thumbs.db
 
-# Build artifacts
-*.exe
-*.dll
-*.so
-*.dylib
-*.a
-
-# Test recordings
+# Application
+config.json
+recordings/
 *.mp3
 *.wav
-test_output/
 
-# Config
-config.toml
+# Logs
+*.log

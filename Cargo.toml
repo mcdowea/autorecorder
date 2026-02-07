@@ -1,0 +1,61 @@
+[package]
+name = "auto-audio-recorder"
+version = "0.1.0"
+edition = "2021"
+authors = ["Your Name <your.email@example.com>"]
+description = "Automatic audio recorder for calls with MP3 encoding"
+license = "MIT"
+
+[dependencies]
+# Audio capture
+cpal = "0.15"
+# MP3 encoding (pure Rust)
+mp3lame-encoder = "0.2"
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+# Configuration
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# Date and time
+chrono = "0.4"
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+# Audio resampling
+rubato = "0.15"
+# System process detection
+sysinfo = "0.30"
+# GUI (optional, for manual control)
+eframe = "0.25"
+egui = "0.25"
+# Command line
+clap = { version = "4.4", features = ["derive"] }
+# File system
+dirs = "5.0"
+# Cross-platform audio device access
+windows = { version = "0.52", features = [
+    "Win32_Media_Audio",
+    "Win32_System_Com",
+    "Win32_Foundation",
+    "Win32_System_Threading",
+], optional = true }
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.52", features = [
+    "Win32_Media_Audio",
+    "Win32_System_Com",
+    "Win32_Foundation",
+    "Win32_System_Threading",
+    "Win32_Media_Audio_CoreAudio",
+    "Win32_System_Com_StructuredStorage",
+]}
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

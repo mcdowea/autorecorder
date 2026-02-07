@@ -33,7 +33,13 @@ auto-recorder.exe record
 按 Ctrl+C 停止录音
 
 #### 5️⃣ 查看录音
-录音文件保存在 `recordings` 文件夹中，文件名格式：`recording_20240207_153045.mp3`
+录音文件保存在 `recordings` 文件夹中，文件名格式：`recording_20240207_153045.wav`
+
+**可选：转换为 MP3**
+```cmd
+REM 需要先安装 ffmpeg
+convert_to_mp3.bat
+```
 
 ---
 

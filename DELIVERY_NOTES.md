@@ -21,10 +21,11 @@
    - ✅ 静音检测自动停止
    - ✅ Ctrl+C 停止
 
-4. **纯 Rust MP3 编码**
-   - ✅ 使用 mp3lame-rs
-   - ✅ 无需 ffmpeg 或 lame_enc.dll
-   - ✅ 可配置采样率、比特率、质量
+4. **WAV 格式录音**
+   - ✅ 使用 hound 库
+   - ✅ 高质量无损音频
+   - ✅ 纯 Rust 实现
+   - ✅ 可选转换为 MP3（使用 ffmpeg）
 
 5. **完善的配置系统**
    - ✅ JSON 配置文件
@@ -111,20 +112,23 @@ cargo build --release
 
 ```toml
 cpal = "0.15"              # 跨平台音频 I/O
-mp3lame = "0.1"            # MP3 编码
+hound = "3.5"              # WAV 文件编码
 serde = "1.0"              # 序列化
 tokio = "1.35"             # 异步运行时
 clap = "4.4"               # CLI 解析
 windows = "0.52"           # Windows API（仅 Windows）
 ```
 
+**可选依赖：**
+- `ffmpeg` - 用于 WAV 转 MP3（不包含在程序中）
+
 ## 🔧 技术特点
 
-1. **无外部依赖**
-   - 纯 Rust 实现
-   - 不需要 ffmpeg
-   - 不需要 lame_enc.dll
+1. **纯 Rust 实现**
+   - WAV 编码使用 hound 库
+   - 不需要 ffmpeg（录音阶段）
    - 所有功能集成在单个可执行文件
+   - 可选使用 ffmpeg 转换为 MP3
 
 2. **高性能**
    - CPU 使用率 1-3%

@@ -7,10 +7,11 @@
 - 🎤 **双音频源录制**：同时捕获麦克风和扬声器音频并混合
 - 🤖 **智能自动录音**：检测微信、QQ、飞书、Skype 等通话应用，自动开始/停止录音
 - 📝 **手动录音模式**：支持按需手动录音
-- 🎵 **MP3 编码**：纯 Rust 实现，使用 `mp3lame` 编码，无需外部依赖
-- ⚙️ **高度可配置**：自定义采样率、比特率、质量等参数
+- 🎵 **WAV 格式录音**：高质量无损音频，可选转换为 MP3
+- ⚙️ **高度可配置**：自定义采样率等参数
 - 🔇 **静音检测**：自动检测静音并停止录音
-- 💾 **自动保存**：录音自动保存为带时间戳的 MP3 文件
+- 💾 **自动保存**：录音自动保存为带时间戳的 WAV 文件
+- 🔄 **MP3 转换**：提供便捷的 WAV 转 MP3 脚本
 
 ## 🚀 快速开始
 
@@ -107,14 +108,49 @@ auto-recorder record --output ./my-recordings
 # 按 Ctrl+C 停止录音
 ```
 
+### 5. 转换 WAV 为 MP3（可选）
+
+录音默认保存为 WAV 格式。如需 MP3 格式，可使用提供的转换脚本：
+
+**Linux/macOS:**
+```bash
+# 确保已安装 ffmpeg
+sudo apt-get install ffmpeg  # Ubuntu/Debian
+brew install ffmpeg          # macOS
+
+# 转换所有 WAV 文件
+chmod +x convert_to_mp3.sh
+./convert_to_mp3.sh
+
+# 自定义参数
+./convert_to_mp3.sh -b 192k -q 1  # 高质量 MP3
+```
+
+**Windows:**
+```cmd
+REM 确保已安装 ffmpeg 并添加到 PATH
+
+REM 转换所有 WAV 文件
+convert_to_mp3.bat
+
+REM 自定义参数
+convert_to_mp3.bat -b 192k -q 1
+```
+
+**转换参数说明：**
+- `-b` / `--bitrate`: MP3 比特率 (64k, 128k, 192k, 320k)
+- `-q` / `--quality`: MP3 质量 (0-9, 0最好)
+- `-i` / `--input`: 输入目录
+- `-o` / `--output`: 输出目录
+
 ## ⚙️ 配置说明
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
 | `output_dir` | 字符串 | `"recordings"` | 录音文件保存目录 |
 | `sample_rate` | 整数 | `44100` | 采样率 (Hz)，推荐：44100 或 48000 |
-| `bit_rate` | 整数 | `128` | MP3 比特率 (kbps)，推荐：128-320 |
-| `quality` | 整数 | `2` | MP3 质量，0 最好，9 最差 |
+| `bit_rate` | 整数 | `128` | 保留字段（WAV格式不使用） |
+| `quality` | 整数 | `2` | 保留字段（WAV格式不使用） |
 | `auto_recording` | 布尔 | `true` | 是否启用自动录音 |
 | `monitored_apps` | 数组 | 见上文 | 要监控的应用程序列表 |
 | `silence_threshold` | 浮点 | `0.01` | 静音检测阈值 (0.0-1.0) |
@@ -123,10 +159,11 @@ auto-recorder record --output ./my-recordings
 ## 🛠️ 技术栈
 
 - **音频捕获**：[cpal](https://github.com/RustAudio/cpal) - 跨平台音频 I/O
-- **MP3 编码**：[mp3lame](https://github.com/mp3lame/mp3lame) - LAME MP3 编码器
+- **音频编码**：[hound](https://github.com/ruuda/hound) - WAV 文件读写
 - **进程监控**：Windows API (仅 Windows)
 - **异步运行时**：[tokio](https://tokio.rs/)
 - **命令行解析**：[clap](https://github.com/clap-rs/clap)
+- **MP3 转换**：外部 ffmpeg 工具（可选）
 
 ## 📋 系统要求
 

@@ -9,10 +9,10 @@ pub struct Config {
     /// 采样率 (Hz)
     pub sample_rate: u32,
     
-    /// 比特率 (kbps)
+    /// 比特率 (kbps) - 保留用于将来MP3支持
     pub bit_rate: u32,
     
-    /// MP3 质量 (0-9, 0最好9最差)
+    /// 质量 (0-9, 0最好9最差) - 保留用于将来MP3支持
     pub quality: u8,
     
     /// 是否启用自动录音

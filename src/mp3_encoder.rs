@@ -1,49 +1,34 @@
 use anyhow::{Context, Result};
-use mp3lame::{Lame, BitRate, Quality};
-use std::fs::File;
-use std::io::Write;
+use hound::{WavWriter, WavSpec, SampleFormat};
 use std::path::Path;
 
-pub struct Mp3Encoder {
-    lame: Lame,
-    output_file: File,
+pub struct AudioEncoder {
+    writer: WavWriter<std::io::BufWriter<std::fs::File>>,
     sample_rate: u32,
 }
 
-impl Mp3Encoder {
+impl AudioEncoder {
     pub fn new(
         output_path: &Path,
         sample_rate: u32,
-        bit_rate: u32,
-        quality: u8,
+        _bit_rate: u32,      // Not used for WAV
+        _quality: u8,         // Not used for WAV
     ) -> Result<Self> {
-        let mut lame = Lame::new().context("Failed to initialize LAME")?;
-
-        // 设置参数
-        lame.set_sample_rate(sample_rate)?;
-        lame.set_num_channels(1)?; // 单声道
-        lame.set_kilobitrate(bit_rate as i32)?;
-        
-        // 设置质量 (0-9)
-        let q = match quality {
-            0 => Quality::Best,
-            1 => Quality::Best,
-            2 => Quality::Good,
-            3..=4 => Quality::Good,
-            5..=6 => Quality::Medium,
-            7..=8 => Quality::Bad,
-            _ => Quality::Worst,
+        let spec = WavSpec {
+            channels: 1,
+            sample_rate,
+            bits_per_sample: 16,
+            sample_format: SampleFormat::Int,
         };
-        lame.set_quality(q)?;
 
-        lame.init_params()?;
+        let writer = WavWriter::create(output_path, spec)
+            .with_context(|| format!("Failed to create WAV file: {:?}", output_path))?;
 
-        let output_file = File::create(output_path)
-            .with_context(|| format!("Failed to create output file: {:?}", output_path))?;
+        tracing::info!("Created WAV encoder: {:?}", output_path);
+        tracing::info!("Sample rate: {} Hz, Channels: 1, Bits: 16", sample_rate);
 
         Ok(Self {
-            lame,
-            output_file,
+            writer,
             sample_rate,
         })
     }
@@ -53,37 +38,18 @@ impl Mp3Encoder {
             return Ok(());
         }
 
-        // 转换 f32 样本到 i16
-        let pcm: Vec<i16> = samples
-            .iter()
-            .map(|&s| (s.clamp(-1.0, 1.0) * 32767.0) as i16)
-            .collect();
-
-        // MP3 编码缓冲区
-        let mut mp3_buffer = vec![0u8; pcm.len() * 5 / 4 + 7200];
-
-        // 编码
-        let encoded_size = self.lame.encode(&pcm, &mut mp3_buffer)?;
-
-        if encoded_size > 0 {
-            self.output_file.write_all(&mp3_buffer[..encoded_size])?;
+        // Convert f32 samples to i16
+        for &sample in samples {
+            let sample_i16 = (sample.clamp(-1.0, 1.0) * 32767.0) as i16;
+            self.writer.write_sample(sample_i16)?;
         }
 
         Ok(())
     }
 
     pub fn finish(mut self) -> Result<()> {
-        // 刷新编码器
-        let mut mp3_buffer = vec![0u8; 7200];
-        let flush_size = self.lame.flush(&mut mp3_buffer)?;
-
-        if flush_size > 0 {
-            self.output_file.write_all(&mp3_buffer[..flush_size])?;
-        }
-
-        self.output_file.flush()?;
-        
-        tracing::info!("MP3 encoding finished");
+        self.writer.finalize()?;
+        tracing::info!("WAV encoding finished");
         Ok(())
     }
 }

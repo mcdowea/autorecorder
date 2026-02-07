@@ -1,6 +1,6 @@
 use crate::audio_capture::{AudioCapture, AudioSource};
 use crate::config::Config;
-use crate::mp3_encoder::Mp3Encoder;
+use crate::mp3_encoder::AudioEncoder;
 use crate::process_monitor::ProcessMonitor;
 use anyhow::{Context, Result};
 use chrono::Local;
@@ -70,7 +70,7 @@ impl Recorder {
 
         // 生成文件名
         let timestamp = Local::now().format("%Y%m%d_%H%M%S");
-        let filename = format!("recording_{}.mp3", timestamp);
+        let filename = format!("recording_{}.wav", timestamp);
         let output_path = self.config.output_dir.join(filename);
 
         tracing::info!("Recording to: {:?}", output_path);
@@ -95,8 +95,8 @@ impl Recorder {
         mic_stream.play()?;
         speaker_stream.play()?;
 
-        // 创建 MP3 编码器
-        let mut encoder = Mp3Encoder::new(
+        // 创建音频编码器
+        let mut encoder = AudioEncoder::new(
             &output_path,
             self.config.sample_rate,
             self.config.bit_rate,

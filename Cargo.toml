@@ -42,3 +42,7 @@ strip = true
 [[bin]]
 name = "auto-recorder"
 path = "src/main.rs"
+
+# Windows 配置 - 保持控制台窗口
+[target.'cfg(windows)'.build]
+rustflags = ["-C", "link-arg=/SUBSYSTEM:CONSOLE"]

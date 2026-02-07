@@ -61,6 +61,31 @@ enum Commands {
 }
 
 fn main() -> Result<()> {
+    // 如果没有任何参数，显示帮助信息并等待
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() == 1 {
+        println!("\n{}", "=".repeat(60));
+        println!("  Auto Recorder - 自动录音程序");
+        println!("{}", "=".repeat(60));
+        println!("\n⚠️  提示：此程序需要通过命令行运行\n");
+        println!("快速开始：");
+        println!("  1. 打开命令提示符 (cmd) 或 PowerShell");
+        println!("  2. 导航到此目录");
+        println!("  3. 运行命令：\n");
+        println!("     auto-recorder.exe --help      查看帮助");
+        println!("     auto-recorder.exe gen-config  生成配置文件");
+        println!("     auto-recorder.exe record      开始录音");
+        println!("     auto-recorder.exe auto        自动录音模式\n");
+        println!("或者：");
+        println!("  双击 launcher.bat 使用图形菜单\n");
+        println!("{}", "=".repeat(60));
+        println!("\n按任意键退出...");
+        
+        use std::io::{self, Read};
+        let _ = io::stdin().read(&mut [0u8]).unwrap();
+        return Ok(());
+    }
+
     let cli = Cli::parse();
 
     // 初始化日志

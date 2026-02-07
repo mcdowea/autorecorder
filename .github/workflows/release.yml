@@ -58,7 +58,19 @@ jobs:
           sudo apt-get install -y libasound2-dev pkg-config
 
       - name: Build
-        run: cargo build --release --target ${{ matrix.target }}
+        run: cargo build --release --target ${{ matrix.target }} --verbose
+        
+      - name: Test binary (Unix)
+        if: matrix.os != 'windows-latest'
+        run: |
+          file target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+          ls -lh target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+
+      - name: Test binary (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          dir target\${{ matrix.target }}\release\${{ matrix.artifact_name }}
+          target\${{ matrix.target }}\release\${{ matrix.artifact_name }} --version
 
       - name: Strip binary (Unix)
         if: matrix.os != 'windows-latest'

@@ -29,9 +29,6 @@ thiserror = "1.0"
 rubato = "0.15"
 # System process detection
 sysinfo = "0.30"
-# GUI (optional, for manual control)
-eframe = "0.25"
-egui = "0.25"
 # Command line
 clap = { version = "4.4", features = ["derive"] }
 # File system
@@ -43,6 +40,14 @@ windows = { version = "0.52", features = [
     "Win32_Foundation",
     "Win32_System_Threading",
 ]}
+
+# GUI (optional feature)
+eframe = { version = "0.28", optional = true }
+egui = { version = "0.28", optional = true }
+
+[features]
+default = ["gui"]
+gui = ["eframe", "egui"]
 
 [profile.release]
 opt-level = 3

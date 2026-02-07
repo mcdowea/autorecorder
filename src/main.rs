@@ -54,7 +54,15 @@ async fn main() -> Result<()> {
     match cli.command {
         Some(Commands::Gui) => {
             info!("启动 GUI 界面...");
-            gui::run_gui()?;
+            #[cfg(feature = "gui")]
+            {
+                gui::run_gui()?;
+            }
+            #[cfg(not(feature = "gui"))]
+            {
+                eprintln!("GUI 功能未启用。请使用 --features gui 重新编译");
+                eprintln!("或使用命令行模式: auto-audio-recorder run");
+            }
         }
         Some(Commands::Run { no_auto }) => {
             run_auto_recorder(!no_auto).await?;
@@ -69,9 +77,23 @@ async fn main() -> Result<()> {
             list_devices()?;
         }
         None => {
-            // 默认启动 GUI
-            info!("启动 GUI 界面...");
-            gui::run_gui()?;
+            // 默认启动 GUI（如果启用）
+            #[cfg(feature = "gui")]
+            {
+                info!("启动 GUI 界面...");
+                gui::run_gui()?;
+            }
+            #[cfg(not(feature = "gui"))]
+            {
+                println!("自动录音程序 - Windows 版本");
+                println!();
+                println!("使用方法:");
+                println!("  auto-audio-recorder run      # 自动录音模式");
+                println!("  auto-audio-recorder start    # 手动录音");
+                println!("  auto-audio-recorder config   # 显示配置");
+                println!("  auto-audio-recorder devices  # 列出设备");
+                println!("  auto-audio-recorder --help   # 显示帮助");
+            }
         }
     }
     

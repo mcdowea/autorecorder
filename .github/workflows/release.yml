@@ -54,7 +54,7 @@ jobs:
           key: ${{ runner.os }}-cargo-build-target-${{ matrix.platform.target }}-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build
-        run: cargo build --release --target ${{ matrix.platform.target }}
+        run: cargo build --release --no-default-features --target ${{ matrix.platform.target }}
 
       - name: Rename artifact
         shell: bash

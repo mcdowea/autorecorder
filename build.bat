@@ -41,11 +41,11 @@ echo [成功] 清理完成
 echo.
 
 REM 编译项目
-echo [4/5] 开始编译项目（发布版本）...
+echo [4/5] 开始编译项目（发布版本，无 GUI）...
 echo 这可能需要几分钟时间，请耐心等待...
 echo.
 
-cargo build --release --target x86_64-pc-windows-msvc
+cargo build --release --no-default-features --target x86_64-pc-windows-msvc
 
 if errorlevel 1 (
     echo.
@@ -78,14 +78,20 @@ if exist target\x86_64-pc-windows-msvc\release\auto-audio-recorder.exe (
     
     echo.
     echo ==========================================
-    echo 编译成功！
+    echo 编译成功！（命令行版本）
     echo ==========================================
     echo.
     echo 运行程序:
-    echo   .\target\x86_64-pc-windows-msvc\release\auto-audio-recorder.exe
+    echo   .\target\x86_64-pc-windows-msvc\release\auto-audio-recorder.exe run
     echo.
-    echo 或使用 GUI 模式:
-    echo   .\target\x86_64-pc-windows-msvc\release\auto-audio-recorder.exe gui
+    echo 或手动录音:
+    echo   .\target\x86_64-pc-windows-msvc\release\auto-audio-recorder.exe start
+    echo.
+    echo 查看帮助:
+    echo   .\target\x86_64-pc-windows-msvc\release\auto-audio-recorder.exe --help
+    echo.
+    echo 注意: 此版本不包含 GUI，如需 GUI 请使用:
+    echo   cargo build --release --features gui
     echo.
 ) else (
     echo [错误] 未找到可执行文件

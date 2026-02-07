@@ -1,3 +1,4 @@
+#[cfg(feature = "gui")]
 use crate::config::RecorderConfig;
 use crate::recorder::{RecorderManager, RecordingState};
 use eframe::egui;
@@ -230,6 +231,7 @@ impl eframe::App for RecorderApp {
     }
 }
 
+#[cfg(feature = "gui")]
 pub fn run_gui() -> Result<(), eframe::Error> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -243,4 +245,9 @@ pub fn run_gui() -> Result<(), eframe::Error> {
         options,
         Box::new(|cc| Ok(Box::new(RecorderApp::new(cc)))),
     )
+}
+
+#[cfg(not(feature = "gui"))]
+pub fn run_gui() -> Result<(), Box<dyn std::error::Error>> {
+    Err("GUI feature is not enabled. Compile with --features gui".into())
 }

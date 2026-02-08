@@ -86,14 +86,29 @@ impl Recorder {
             self.config.sample_rate,
         )?;
 
-        let (speaker_stream, speaker_rx) = audio_capture.create_stream(
+        // 尝试创建扬声器流（可能失败）
+        let speaker_stream_result = audio_capture.create_stream(
             AudioSource::Speaker,
             self.config.sample_rate,
-        )?;
+        );
+        
+        let (speaker_stream, speaker_rx) = match speaker_stream_result {
+            Ok((stream, rx)) => {
+                tracing::info!("Speaker recording enabled");
+                (Some(stream), Some(rx))
+            },
+            Err(e) => {
+                tracing::warn!("Speaker recording disabled: {}", e);
+                tracing::info!("Recording will use microphone only");
+                (None, None)
+            }
+        };
 
         // 启动流
         mic_stream.play()?;
-        speaker_stream.play()?;
+        if let Some(ref stream) = speaker_stream {
+            stream.play()?;
+        }
 
         // 创建音频编码器
         let mut encoder = AudioEncoder::new(
@@ -137,21 +152,23 @@ impl Recorder {
                 has_audio = true;
             }
 
-            // 从扬声器接收
-            while let Ok(samples) = speaker_rx.try_recv() {
-                if mixed_samples.is_empty() {
-                    mixed_samples = samples;
-                } else {
-                    // 混合音频
-                    for (i, &sample) in samples.iter().enumerate() {
-                        if i < mixed_samples.len() {
-                            mixed_samples[i] = (mixed_samples[i] + sample) / 2.0;
-                        } else {
-                            mixed_samples.push(sample);
+            // 从扬声器接收（如果可用）
+            if let Some(ref rx) = speaker_rx {
+                while let Ok(samples) = rx.try_recv() {
+                    if mixed_samples.is_empty() {
+                        mixed_samples = samples;
+                    } else {
+                        // 混合音频
+                        for (i, &sample) in samples.iter().enumerate() {
+                            if i < mixed_samples.len() {
+                                mixed_samples[i] = (mixed_samples[i] + sample) / 2.0;
+                            } else {
+                                mixed_samples.push(sample);
+                            }
                         }
                     }
+                    has_audio = true;
                 }
-                has_audio = true;
             }
 
             if !mixed_samples.is_empty() {
@@ -194,7 +211,9 @@ impl Recorder {
 
         // 完成编码
         drop(mic_stream);
-        drop(speaker_stream);
+        if let Some(stream) = speaker_stream {
+            drop(stream);
+        }
         encoder.finish()?;
 
         let duration_secs = total_samples / self.config.sample_rate as u64;

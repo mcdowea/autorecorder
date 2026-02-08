@@ -77,16 +77,16 @@ impl AudioCapture {
             }
             
             tracing::warn!("No loopback device found. Please enable 'Stereo Mix' in Windows sound settings.");
-            tracing::warn!("Using default output device as fallback (may not work).");
+            tracing::warn!("Speaker recording will be disabled. Only microphone will be recorded.");
+            // 不设置 speaker_device，让它保持 None
+            return Ok(());
         }
         
-        self.speaker_device = Some(
-            self.host
-                .default_output_device()
-                .context("No output device available")?,
-        );
-        
-        Ok(())
+        #[cfg(not(target_os = "windows"))]
+        {
+            tracing::warn!("Speaker loopback recording is only supported on Windows");
+            return Ok(());
+        }
     }
 
     pub fn create_stream(

@@ -1,0 +1,212 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # 当推送类似 v1.0.0 的标签时触发
+  workflow_dispatch:  # 允许手动触发
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+        targets: x86_64-pc-windows-msvc
+        components: rustfmt, clippy
+
+    # 使用 Swatinem 的 Rust 缓存 action，自动管理所有缓存
+    - name: Setup Rust cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        # 缓存键的前缀
+        prefix-key: "v1-rust"
+        # 缓存目标目录
+        cache-targets: true
+        # 缓存 cargo registry
+        cache-on-failure: true
+        # 工作目录
+        workspaces: "."
+
+    # 检查代码格式（可选，用于 CI）
+    - name: Check code format
+      run: cargo fmt --all -- --check
+      continue-on-error: true
+
+    # 使用增量编译加速
+    - name: Build workspace (check only)
+      run: cargo check --release --workspace
+      env:
+        CARGO_INCREMENTAL: 1
+
+    # 并行构建两个二进制文件
+    - name: Build CLI and GUI (Release)
+      run: |
+        cargo build --release --bin smart-recorder --bin smart-recorder-gui
+      env:
+        CARGO_INCREMENTAL: 1
+        # 使用更多 CPU 核心
+        CARGO_BUILD_JOBS: 4
+
+    - name: Verify binaries
+      shell: powershell
+      run: |
+        if (!(Test-Path "target\release\smart-recorder.exe")) {
+          Write-Error "CLI binary not found"
+          exit 1
+        }
+        if (!(Test-Path "target\release\smart-recorder-gui.exe")) {
+          Write-Error "GUI binary not found"
+          exit 1
+        }
+        Write-Host "✅ Both binaries built successfully"
+        
+        # 显示文件大小
+        $cli = Get-Item "target\release\smart-recorder.exe"
+        $gui = Get-Item "target\release\smart-recorder-gui.exe"
+        Write-Host "CLI size: $([math]::Round($cli.Length/1MB, 2)) MB"
+        Write-Host "GUI size: $([math]::Round($gui.Length/1MB, 2)) MB"
+
+    - name: Prepare release artifacts
+      shell: powershell
+      run: |
+        New-Item -ItemType Directory -Force -Path release
+        Copy-Item target\release\smart-recorder.exe release\
+        Copy-Item target\release\smart-recorder-gui.exe release\
+        Copy-Item README.md release\
+        Copy-Item CONFIG.md release\ -ErrorAction SilentlyContinue
+        Copy-Item QUICKSTART.md release\ -ErrorAction SilentlyContinue
+        Copy-Item CHANGELOG.md release\ -ErrorAction SilentlyContinue
+        
+        # 创建配置文件示例
+        @"
+        {
+          "output_path": "D:\\Recordings",
+          "auto_create_folders": true,
+          "sample_rate": 48000,
+          "bit_rate": 128,
+          "audio_format": "mp3",
+          "mp3_quality": 2,
+          "mic_gain": 1.0,
+          "speaker_gain": 1.0,
+          "blacklist": "chrome.exe,firefox.exe,msedge.exe,explorer.exe",
+          "auto_start": false,
+          "minimize_to_tray": true,
+          "min_duration_seconds": 3
+        }
+        "@ | Out-File -FilePath release\config.example.json -Encoding UTF8
+
+    - name: Create ZIP archive
+      shell: powershell
+      run: |
+        $version = "${{ github.ref_name }}"
+        if ($version -notmatch "^v") {
+          $version = "v1.1.0"
+        }
+        $zipName = "smart-recorder-windows-$version.zip"
+        Compress-Archive -Path release\* -DestinationPath $zipName -Force
+        Write-Host "✅ Created $zipName"
+        
+        # 显示 ZIP 文件大小
+        $zip = Get-Item $zipName
+        Write-Host "ZIP size: $([math]::Round($zip.Length/1MB, 2)) MB"
+
+    - name: Get version from tag
+      id: get_version
+      shell: bash
+      run: |
+        if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+          echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        else
+          echo "VERSION=v1.1.0" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v2
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: |
+          smart-recorder-windows-*.zip
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+        body: |
+          ## Smart Recorder ${{ steps.get_version.outputs.VERSION }}
+          
+          ### ✨ 新功能
+          - 🎙️ **手动录音**: 独立的手动录音功能，不依赖麦克风检测
+          - 🎵 **扩展音质选项**: 支持 16kHz - 96kHz 采样率
+          - 💿 **更多比特率**: 支持 64 - 320 kbps (6个选项)
+          - ⚙️ **MP3 质量控制**: 可调节 LAME 编码质量 (0-9)
+          - 🎤 **智能检测**: 自动检测麦克风使用并录音
+          - 🔊 **双通道录音**: 同时录制麦克风和扬声器
+          - 🚫 **进程黑名单**: 过滤不需要录音的应用
+          - 📊 **实时监控**: 可视化音频电平显示
+          
+          ### 📥 下载和安装
+          
+          1. 下载 `smart-recorder-windows-${{ steps.get_version.outputs.VERSION }}.zip`
+          2. 解压到任意目录
+          3. 运行 `smart-recorder-gui.exe` (推荐图形界面)
+          4. 或运行 `smart-recorder.exe` (命令行版本)
+          
+          ### 💡 快速开始
+          
+          **自动录音模式**:
+          - 点击 "▶️ 开始监控"
+          - 程序自动检测麦克风使用并录音
+          - 支持 QQ、微信、Zoom 等所有应用
+          
+          **手动录音模式**:
+          - 点击 "🎙️ 手动录音"
+          - 随时开始/停止录音
+          - 适合录制课程、播客等
+          
+          ### ⚙️ 推荐配置
+          
+          **日常录音**: 48kHz, 128kbps, MP3, 质量2  
+          **高质量会议**: 48kHz, 192kbps, MP3, 质量2  
+          **专业录音**: 96kHz, WAV 格式 (无损)  
+          **节省空间**: 22kHz, 96kbps, MP3, 质量5  
+          
+          ### 📋 系统要求
+          
+          - **操作系统**: Windows 10/11 (64-bit)
+          - **框架**: .NET Framework (通常已预装)
+          - **磁盘空间**: 约 50 MB
+          - **权限**: 需要麦克风访问权限
+          
+          ### 📄 配置文件
+          
+          首次运行后会在程序目录生成 `smart_recorder_config.json` 配置文件。
+          可以手动编辑或通过 GUI 设置界面修改。
+          
+          ### 🐛 问题反馈
+          
+          如遇到问题，请提交 [Issue](https://github.com/${{ github.repository }}/issues)
+          
+          ### 📚 文档
+          
+          - 📖 [快速入门](https://github.com/${{ github.repository }}/blob/main/QUICKSTART.md)
+          - ⚙️ [配置说明](https://github.com/${{ github.repository }}/blob/main/CONFIG.md)
+          - 📝 [更新日志](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md)
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: smart-recorder-windows-${{ steps.get_version.outputs.VERSION }}
+        path: smart-recorder-windows-*.zip
+        retention-days: 90
+        compression-level: 0  # 文件已经是 ZIP，不需要再压缩

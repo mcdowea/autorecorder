@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  check:
+    name: Quick Check
+    runs-on: windows-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt, clippy
+    
+    - name: Rust Cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        prefix-key: "v1-rust-ci"
+    
+    # 最快的检查 - 只验证代码格式
+    - name: Check formatting
+      run: cargo fmt --all -- --check
+    
+    # 第二快 - 只检查编译不构建
+    - name: Cargo check
+      run: cargo check --workspace --all-targets
+      env:
+        CARGO_INCREMENTAL: 1
+    
+    # Clippy 检查代码质量
+    - name: Clippy
+      run: cargo clippy --workspace --all-targets -- -D warnings
+      continue-on-error: true
+
+  test:
+    name: Test
+    runs-on: windows-latest
+    needs: check
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@stable
+    
+    - name: Rust Cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        prefix-key: "v1-rust-test"
+    
+    - name: Run tests
+      run: cargo test --workspace
+      env:
+        CARGO_INCREMENTAL: 1
+
+  build-check:
+    name: Build Check
+    runs-on: windows-latest
+    needs: check
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@stable
+    
+    - name: Rust Cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        prefix-key: "v1-rust-build"
+    
+    # 只构建 debug 版本验证
+    - name: Build debug
+      run: cargo build --workspace --all-targets
+      env:
+        CARGO_INCREMENTAL: 1

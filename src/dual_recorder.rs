@@ -1,19 +1,16 @@
 // 双通道录音模块
 // 同时捕获麦克风输入和扬声器输出
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use crossbeam_channel::{bounded, Sender, Receiver};
 use std::sync::Arc;
 use parking_lot::Mutex;
-use std::time::{Duration, Instant};
-use std::path::PathBuf;
+use std::time::Duration;
 
 #[cfg(target_os = "windows")]
 use windows::{
-    core::*,
     Win32::Media::Audio::*,
     Win32::System::Com::*,
-    Win32::Foundation::*,
 };
 
 pub struct DualChannelRecorder {
@@ -99,7 +96,7 @@ impl DualChannelRecorder {
             // 获取默认麦克风设备
             let device = enumerator.GetDefaultAudioEndpoint(eCapture, eConsole)?;
 
-            let audio_client: IAudioClient = device.Activate(CLSCTX_ALL, None)?;
+            let audio_client: IAudioClient = device.Activate::<IAudioClient>(CLSCTX_ALL, None)?;
             let pwfx = audio_client.GetMixFormat()?;
             let wave_format = *pwfx;
 
@@ -130,7 +127,7 @@ impl DualChannelRecorder {
                     continue;
                 }
 
-                let mut data_ptr = std::ptr::null_mut();
+                let mut data_ptr: *mut u8 = std::ptr::null_mut();
                 let mut num_frames = 0u32;
                 let mut flags = 0u32;
 
@@ -181,7 +178,7 @@ impl DualChannelRecorder {
             // 获取默认扬声器设备
             let device = enumerator.GetDefaultAudioEndpoint(eRender, eConsole)?;
 
-            let audio_client: IAudioClient = device.Activate(CLSCTX_ALL, None)?;
+            let audio_client: IAudioClient = device.Activate::<IAudioClient>(CLSCTX_ALL, None)?;
             let pwfx = audio_client.GetMixFormat()?;
             let wave_format = *pwfx;
 
@@ -212,7 +209,7 @@ impl DualChannelRecorder {
                     continue;
                 }
 
-                let mut data_ptr = std::ptr::null_mut();
+                let mut data_ptr: *mut u8 = std::ptr::null_mut();
                 let mut num_frames = 0u32;
                 let mut flags = 0u32;
 

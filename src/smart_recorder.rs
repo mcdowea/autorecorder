@@ -1,15 +1,15 @@
 // 智能录音控制器
 // 整合麦克风检测、双通道录音和MP3编码
 
-use anyhow::{Context, Result};
-use std::path::{Path, PathBuf};
+use anyhow::Result;
+use std::path::PathBuf;
 use std::sync::Arc;
 use parking_lot::Mutex;
 use std::time::{Duration, Instant};
 use chrono::Local;
 
-use crate::mic_detector::{MicrophoneDetector, AudioSession};
-use crate::dual_recorder::{DualChannelRecorder, AudioMixer, RecordingSession};
+use crate::mic_detector::MicrophoneDetector;
+use crate::dual_recorder::{DualChannelRecorder, AudioMixer};
 use crate::mp3_encoder::{StreamingMp3Encoder, WavEncoder};
 
 #[derive(Debug, Clone)]
@@ -143,7 +143,7 @@ impl SmartRecorder {
         app_name: String,
         config: RecorderConfig,
         is_recording: Arc<Mutex<bool>>,
-        current_session: Arc<Mutex<Option<String>>>,
+        _current_session: Arc<Mutex<Option<String>>>,
     ) -> Result<()> {
         println!("🔴 开始录音...");
         

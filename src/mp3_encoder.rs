@@ -1,10 +1,11 @@
 // MP3编码器模块
 // 将WAV音频数据编码为MP3格式
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use std::path::Path;
 use std::fs::File;
 use std::io::Write;
+use std::mem::MaybeUninit;
 
 pub struct Mp3Encoder {
     sample_rate: u32,
@@ -30,18 +31,32 @@ impl Mp3Encoder {
         use mp3lame_encoder::{Builder, FlushNoGap, InterleavedPcm};
 
         // 创建LAME编码器
-        let mut encoder = Builder::new()
-            .context("Failed to create LAME encoder")?
-            .set_sample_rate(self.sample_rate)
-            .context("Failed to set sample rate")?
-            .set_num_channels(1)  // 单声道
-            .context("Failed to set channels")?
-            .set_brate(mp3lame_encoder::Bitrate::Kbps(self.bit_rate as u32))
-            .context("Failed to set bitrate")?
-            .set_quality(mp3lame_encoder::Quality::Best)
-            .context("Failed to set quality")?
-            .build()
-            .context("Failed to build encoder")?;
+        let mut encoder = Builder::new().expect("Failed to create LAME encoder");
+        encoder.set_sample_rate(self.sample_rate).expect("Failed to set sample rate");
+        encoder.set_num_channels(1).expect("Failed to set channels");
+        
+        // 设置比特率
+        let bitrate = match self.bit_rate {
+            64 => mp3lame_encoder::Bitrate::Kbps64,
+            96 => mp3lame_encoder::Bitrate::Kbps96,
+            128 => mp3lame_encoder::Bitrate::Kbps128,
+            192 => mp3lame_encoder::Bitrate::Kbps192,
+            256 => mp3lame_encoder::Bitrate::Kbps256,
+            320 => mp3lame_encoder::Bitrate::Kbps320,
+            _ => mp3lame_encoder::Bitrate::Kbps128,
+        };
+        encoder.set_brate(bitrate).expect("Failed to set bitrate");
+        
+        // 设置质量
+        let quality = match self.quality {
+            0 => mp3lame_encoder::Quality::Best,
+            1..=4 => mp3lame_encoder::Quality::BestStandard,
+            5..=7 => mp3lame_encoder::Quality::Good,
+            _ => mp3lame_encoder::Quality::Fast,
+        };
+        encoder.set_quality(quality).expect("Failed to set quality");
+        
+        let mut encoder = encoder.build().expect("Failed to build encoder");
 
         // 转换f32到i16
         let pcm_samples: Vec<i16> = samples
@@ -50,17 +65,33 @@ impl Mp3Encoder {
             .collect();
 
         // 编码
-        let mut mp3_buffer = Vec::new();
+        let mut mp3_buffer = Vec::with_capacity(pcm_samples.len());
         let input = InterleavedPcm(&pcm_samples);
         
-        let encoded = encoder.encode(input)
-            .context("Failed to encode audio")?;
-        mp3_buffer.extend_from_slice(encoded);
+        // 为输出分配足够的空间
+        let mut output = vec![MaybeUninit::uninit(); pcm_samples.len() * 5 / 4 + 7200];
+        let encoded_size = encoder.encode(input, &mut output)
+            .expect("Failed to encode audio");
+        
+        // 安全地转换已初始化的部分
+        unsafe {
+            mp3_buffer.extend_from_slice(std::slice::from_raw_parts(
+                output.as_ptr() as *const u8,
+                encoded_size,
+            ));
+        }
 
         // Flush剩余数据
-        let flushed = encoder.flush::<FlushNoGap>()
-            .context("Failed to flush encoder")?;
-        mp3_buffer.extend_from_slice(flushed);
+        let mut flush_output = vec![MaybeUninit::uninit(); 7200];
+        let flushed_size = encoder.flush::<FlushNoGap>(&mut flush_output)
+            .expect("Failed to flush encoder");
+        
+        unsafe {
+            mp3_buffer.extend_from_slice(std::slice::from_raw_parts(
+                flush_output.as_ptr() as *const u8,
+                flushed_size,
+            ));
+        }
 
         // 写入文件
         let mut file = File::create(output_path)?;
@@ -82,21 +113,35 @@ pub struct StreamingMp3Encoder {
 }
 
 impl StreamingMp3Encoder {
-    pub fn new(sample_rate: u32, bit_rate: u32, _quality: u8) -> Result<Self> {
+    pub fn new(sample_rate: u32, bit_rate: u32, quality: u8) -> Result<Self> {
         use mp3lame_encoder::Builder;
 
-        let encoder = Builder::new()
-            .context("Failed to create LAME encoder")?
-            .set_sample_rate(sample_rate)
-            .context("Failed to set sample rate")?
-            .set_num_channels(1)
-            .context("Failed to set channels")?
-            .set_brate(mp3lame_encoder::Bitrate::Kbps(bit_rate as u32))
-            .context("Failed to set bitrate")?
-            .set_quality(mp3lame_encoder::Quality::Best)
-            .context("Failed to set quality")?
-            .build()
-            .context("Failed to build encoder")?;
+        let mut builder = Builder::new().expect("Failed to create LAME encoder");
+        builder.set_sample_rate(sample_rate).expect("Failed to set sample rate");
+        builder.set_num_channels(1).expect("Failed to set channels");
+        
+        // 设置比特率
+        let bitrate = match bit_rate {
+            64 => mp3lame_encoder::Bitrate::Kbps64,
+            96 => mp3lame_encoder::Bitrate::Kbps96,
+            128 => mp3lame_encoder::Bitrate::Kbps128,
+            192 => mp3lame_encoder::Bitrate::Kbps192,
+            256 => mp3lame_encoder::Bitrate::Kbps256,
+            320 => mp3lame_encoder::Bitrate::Kbps320,
+            _ => mp3lame_encoder::Bitrate::Kbps128,
+        };
+        builder.set_brate(bitrate).expect("Failed to set bitrate");
+        
+        // 设置质量
+        let qual = match quality {
+            0 => mp3lame_encoder::Quality::Best,
+            1..=4 => mp3lame_encoder::Quality::BestStandard,
+            5..=7 => mp3lame_encoder::Quality::Good,
+            _ => mp3lame_encoder::Quality::Fast,
+        };
+        builder.set_quality(qual).expect("Failed to set quality");
+        
+        let encoder = builder.build().expect("Failed to build encoder");
 
         Ok(Self {
             encoder,
@@ -115,10 +160,19 @@ impl StreamingMp3Encoder {
             .collect();
 
         let input = InterleavedPcm(&pcm_samples);
-        let encoded = self.encoder.encode(input)
-            .context("Failed to encode samples")?;
         
-        self.mp3_buffer.extend_from_slice(encoded);
+        // 为输出分配足够的空间
+        let mut output = vec![MaybeUninit::uninit(); pcm_samples.len() * 5 / 4 + 7200];
+        let encoded_size = self.encoder.encode(input, &mut output)
+            .expect("Failed to encode samples");
+        
+        // 安全地转换已初始化的部分
+        unsafe {
+            self.mp3_buffer.extend_from_slice(std::slice::from_raw_parts(
+                output.as_ptr() as *const u8,
+                encoded_size,
+            ));
+        }
 
         Ok(())
     }
@@ -127,9 +181,16 @@ impl StreamingMp3Encoder {
     pub fn finish(mut self) -> Result<Vec<u8>> {
         use mp3lame_encoder::FlushNoGap;
 
-        let flushed = self.encoder.flush::<FlushNoGap>()
-            .context("Failed to flush encoder")?;
-        self.mp3_buffer.extend_from_slice(flushed);
+        let mut flush_output = vec![MaybeUninit::uninit(); 7200];
+        let flushed_size = self.encoder.flush::<FlushNoGap>(&mut flush_output)
+            .expect("Failed to flush encoder");
+        
+        unsafe {
+            self.mp3_buffer.extend_from_slice(std::slice::from_raw_parts(
+                flush_output.as_ptr() as *const u8,
+                flushed_size,
+            ));
+        }
 
         Ok(self.mp3_buffer)
     }

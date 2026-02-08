@@ -1,9 +1,8 @@
 // 智能麦克风占用检测模块
 // 通过Windows Core Audio API检测哪些进程正在使用麦克风
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use std::collections::HashSet;
-use std::time::Duration;
 
 #[cfg(target_os = "windows")]
 use windows::{
@@ -103,7 +102,7 @@ impl MicrophoneDetector {
         )?;
 
         // 激活会话管理器
-        let session_manager: IAudioSessionManager2 = device.Activate(CLSCTX_ALL, None)?;
+        let session_manager: IAudioSessionManager2 = device.Activate::<IAudioSessionManager2>(CLSCTX_ALL, None)?;
 
         // 获取会话枚举器
         let session_enumerator = session_manager.GetSessionEnumerator()?;
@@ -111,9 +110,9 @@ impl MicrophoneDetector {
 
         for i in 0..count {
             if let Ok(session_control) = session_enumerator.GetSession(i) {
-                if let Ok(session2) = session_control.cast::<IAudioSessionControl2>() {
+                if let Ok(session2): Result<IAudioSessionControl2, _> = session_control.cast::<IAudioSessionControl2>() {
                     // 获取进程ID
-                    if let Ok(process_id) = session2.GetProcessId() {
+                    if let Ok(process_id): Result<u32, _> = session2.GetProcessId() {
                         if process_id == 0 {
                             continue; // 跳过系统会话
                         }
@@ -124,7 +123,7 @@ impl MicrophoneDetector {
 
                         // 获取会话ID
                         let session_id = session2.GetSessionInstanceIdentifier()
-                            .map(|s| s.to_string().unwrap_or_default())
+                            .map(|s: PWSTR| s.to_string().unwrap_or_default())
                             .unwrap_or_default();
 
                         // 检查会话状态
@@ -160,7 +159,7 @@ impl MicrophoneDetector {
         if QueryFullProcessImageNameW(
             process_handle,
             PROCESS_NAME_WIN32,
-            &mut buffer,
+            PWSTR(buffer.as_mut_ptr()),
             &mut size,
         ).is_ok() {
             let path = String::from_utf16_lossy(&buffer[..size as usize]);

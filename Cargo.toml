@@ -1,0 +1,62 @@
+[package]
+name = "smart-recorder"
+version = "1.1.0"
+edition = "2021"
+authors = ["Smart Recorder Team"]
+description = "智能录音工具 - 自动检测麦克风使用并录音"
+license = "MIT"
+
+[dependencies]
+anyhow = "1.0"
+thiserror = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = "0.4"
+crossbeam-channel = "0.5"
+parking_lot = "0.12"
+clap = { version = "4.4", features = ["derive"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+# 音频处理 - 使用 cpal 进行跨平台录音
+cpal = "0.16"
+hound = "3.5"
+mp3lame-encoder = "0.2"
+
+# GUI dependencies (Windows only)
+[target.'cfg(windows)'.dependencies.eframe]
+version = "0.25"
+
+[target.'cfg(windows)'.dependencies.egui]
+version = "0.25"
+
+[target.'cfg(windows)'.dependencies.rfd]
+version = "0.13"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.52", features = [
+    "Win32_Foundation",
+    "Win32_System_Threading",
+    "Win32_System_ProcessStatus",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_Media_Audio",
+    "Win32_System_Com",
+] }
+
+[target.'cfg(windows)'.dependencies.winapi]
+version = "0.3"
+features = ["winuser", "windef", "shellapi", "winnt"]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+
+[[bin]]
+name = "smart-recorder"
+path = "src/main.rs"
+
+[[bin]]
+name = "smart-recorder-gui"
+path = "src/gui.rs"

@@ -1,0 +1,54 @@
+[package]
+name = "auto-recorder"
+version = "0.2.0"
+edition = "2021"
+authors = ["Auto Recorder Team"]
+description = "Automatic audio recorder for microphone and speakers with GUI"
+license = "MIT"
+repository = "https://github.com/yourusername/auto-recorder"
+
+[dependencies]
+cpal = "0.15"
+hound = "3.5"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = "0.4"
+anyhow = "1.0"
+thiserror = "1.0"
+tokio = { version = "1.35", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+crossbeam-channel = "0.5"
+parking_lot = "0.12"
+clap = { version = "4.4", features = ["derive"] }
+ctrlc = "3.4"
+
+# GUI dependencies
+eframe = "0.25"
+egui = "0.25"
+rfd = "0.13"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.52", features = [
+    "Win32_Foundation",
+    "Win32_System_Threading",
+    "Win32_System_ProcessStatus",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_Media_Audio",
+] }
+widestring = "1.0"
+winapi = { version = "0.3", features = ["winuser", "windef"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+
+[[bin]]
+name = "auto-recorder"
+path = "src/main.rs"
+
+[[bin]]
+name = "auto-recorder-gui"
+path = "src/gui.rs"

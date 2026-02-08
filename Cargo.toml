@@ -23,10 +23,15 @@ parking_lot = "0.12"
 clap = { version = "4.4", features = ["derive"] }
 ctrlc = "3.4"
 
-# GUI dependencies
-eframe = "0.25"
-egui = "0.25"
-rfd = "0.13"
+# GUI dependencies (Windows only)
+[target.'cfg(windows)'.dependencies.eframe]
+version = "0.25"
+
+[target.'cfg(windows)'.dependencies.egui]
+version = "0.25"
+
+[target.'cfg(windows)'.dependencies.rfd]
+version = "0.13"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.52", features = [

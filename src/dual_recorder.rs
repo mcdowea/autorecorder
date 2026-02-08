@@ -96,7 +96,7 @@ impl DualChannelRecorder {
             // 获取默认麦克风设备
             let device = enumerator.GetDefaultAudioEndpoint(eCapture, eConsole)?;
 
-            let audio_client: IAudioClient = device.Activate::<IAudioClient>(CLSCTX_ALL, None)?;
+            let audio_client: IAudioClient = unsafe { device.Activate(CLSCTX_ALL, None)? };
             let pwfx = audio_client.GetMixFormat()?;
             let wave_format = *pwfx;
 
@@ -178,7 +178,7 @@ impl DualChannelRecorder {
             // 获取默认扬声器设备
             let device = enumerator.GetDefaultAudioEndpoint(eRender, eConsole)?;
 
-            let audio_client: IAudioClient = device.Activate::<IAudioClient>(CLSCTX_ALL, None)?;
+            let audio_client: IAudioClient = unsafe { device.Activate(CLSCTX_ALL, None)? };
             let pwfx = audio_client.GetMixFormat()?;
             let wave_format = *pwfx;
 

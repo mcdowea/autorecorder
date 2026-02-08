@@ -50,9 +50,9 @@ impl Mp3Encoder {
         // 设置质量
         let quality = match self.quality {
             0 => mp3lame_encoder::Quality::Best,
-            1..=4 => mp3lame_encoder::Quality::BestStandard,
+            1..=4 => mp3lame_encoder::Quality::Good,
             5..=7 => mp3lame_encoder::Quality::Good,
-            _ => mp3lame_encoder::Quality::Fast,
+            _ => mp3lame_encoder::Quality::Good,
         };
         encoder.set_quality(quality).expect("Failed to set quality");
         
@@ -135,9 +135,9 @@ impl StreamingMp3Encoder {
         // 设置质量
         let qual = match quality {
             0 => mp3lame_encoder::Quality::Best,
-            1..=4 => mp3lame_encoder::Quality::BestStandard,
+            1..=4 => mp3lame_encoder::Quality::Good,
             5..=7 => mp3lame_encoder::Quality::Good,
-            _ => mp3lame_encoder::Quality::Fast,
+            _ => mp3lame_encoder::Quality::Good,
         };
         builder.set_quality(qual).expect("Failed to set quality");
         

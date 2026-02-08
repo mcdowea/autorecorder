@@ -102,7 +102,7 @@ impl MicrophoneDetector {
         )?;
 
         // 激活会话管理器
-        let session_manager: IAudioSessionManager2 = device.Activate::<IAudioSessionManager2>(CLSCTX_ALL, None)?;
+        let session_manager: IAudioSessionManager2 = unsafe { device.Activate(CLSCTX_ALL, None)? };
 
         // 获取会话枚举器
         let session_enumerator = session_manager.GetSessionEnumerator()?;
@@ -110,9 +110,9 @@ impl MicrophoneDetector {
 
         for i in 0..count {
             if let Ok(session_control) = session_enumerator.GetSession(i) {
-                if let Ok(session2): Result<IAudioSessionControl2, _> = session_control.cast::<IAudioSessionControl2>() {
+                if let Ok(session2) = session_control.cast::<IAudioSessionControl2>() {
                     // 获取进程ID
-                    if let Ok(process_id): Result<u32, _> = session2.GetProcessId() {
+                    if let Ok(process_id) = session2.GetProcessId() {
                         if process_id == 0 {
                             continue; // 跳过系统会话
                         }

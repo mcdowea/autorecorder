@@ -44,7 +44,7 @@ impl DualChannelRecorder {
     /// 开始录音,返回录音会话
     pub fn start_recording(&self) -> Result<RecordingSession> {
         let host = cpal::default_host();
-        
+
         // 设置通道
         let (mic_tx, mic_rx) = bounded(1000);
         let (speaker_tx, speaker_rx) = bounded(1000);
@@ -52,7 +52,7 @@ impl DualChannelRecorder {
 
         // 启动麦克风录音
         let mic_stream = self.start_microphone_capture(&host, mic_tx, self.mic_gain)?;
-        
+
         // 尝试启动扬声器录音 (Loopback)
         // 注意: Windows 上需要使用 WASAPI Loopback
         let speaker_stream = self.start_speaker_capture(&host, speaker_tx, self.speaker_gain).ok();
@@ -119,7 +119,7 @@ impl DualChannelRecorder {
         // 在 Windows 上,使用 output device 的 loopback 功能
         // 注意: cpal 本身不直接支持 loopback,需要平台特定的实现
         // 这里我们尝试使用默认输出设备
-        
+
         let device = host
             .default_output_device()
             .context("No output device available")?;
@@ -130,7 +130,7 @@ impl DualChannelRecorder {
         // 注意: cpal 0.16 在 Windows 上使用 WASAPI,但不直接支持 loopback mode
         // 需要使用 Windows API 直接访问或者使用虚拟音频设备
         // 这里我们保留接口,但实际实现可能需要回退到 Windows API
-        
+
         Err(anyhow::anyhow!("Loopback not directly supported via cpal"))
     }
 
@@ -251,7 +251,7 @@ impl AudioMixer {
     /// 混音并返回混合后的样本
     pub fn mix(&mut self) -> Vec<f32> {
         let len = self.mic_buffer.len().min(self.speaker_buffer.len());
-        
+
         if len == 0 {
             // 如果没有足够的数据混音,返回麦克风数据
             let result = self.mic_buffer.clone();

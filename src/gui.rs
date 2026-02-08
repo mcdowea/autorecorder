@@ -26,20 +26,20 @@ mod gui_impl {
         // 基本设置
         output_path: String,
         auto_create_folders: bool,
-        
+
         // 音质设置
         sample_rate: u32,
         bit_rate: u32,
         audio_format: String,  // "mp3" or "wav"
         mp3_quality: u8,  // 0-9, 越小质量越高
-        
+
         // 增益设置
         mic_gain: f32,
         speaker_gain: f32,
-        
+
         // 黑名单
         blacklist: String,  // 逗号分隔的进程名
-        
+
         // 系统设置
         auto_start: bool,
         minimize_to_tray: bool,
@@ -121,7 +121,7 @@ mod gui_impl {
     pub struct SmartRecorderApp {
         config: AppConfig,
         show_settings: bool,
-        
+
         // 运行状态
         is_monitoring: bool,
         is_recording: bool,
@@ -129,17 +129,17 @@ mod gui_impl {
         current_app: Option<String>,
         recording_duration: Duration,
         manual_recording_start: Option<Instant>,  // 手动录音开始时间
-        
+
         // 音频电平
         audio_levels: Arc<Mutex<AudioLevels>>,
-        
+
         // 监控线程
         monitor_thread: Option<std::thread::JoinHandle<()>>,
         audio_monitor_thread: Option<std::thread::JoinHandle<()>>,
         manual_recording_thread: Option<std::thread::JoinHandle<()>>,  // 手动录音线程
         stop_signal: Arc<Mutex<bool>>,
         manual_stop_signal: Arc<Mutex<bool>>,  // 手动录音停止信号
-        
+
         // 日志
         log_messages: Vec<String>,
         max_log_lines: usize,
@@ -175,10 +175,10 @@ mod gui_impl {
         pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
             configure_fonts(&cc.egui_ctx);
             let mut app = Self::default();
-            
+
             // 启动音频电平监控
             app.start_audio_level_monitor();
-            
+
             app
         }
 
@@ -196,7 +196,7 @@ mod gui_impl {
         fn add_log(&mut self, message: String) {
             let timestamp = chrono::Local::now().format("%H:%M:%S");
             self.log_messages.push(format!("[{}] {}", timestamp, message));
-            
+
             // 限制日志行数
             if self.log_messages.len() > self.max_log_lines {
                 self.log_messages.remove(0);
@@ -272,12 +272,12 @@ mod gui_impl {
 
             self.is_manual_recording = false;
             *self.manual_stop_signal.lock() = true;
-            
+
             if let Some(start) = self.manual_recording_start {
                 let duration = start.elapsed();
                 self.add_log(format!("⏹️  手动录音已停止 (时长: {:.1}秒)", duration.as_secs_f32()));
             }
-            
+
             self.manual_recording_start = None;
         }
 
@@ -287,7 +287,7 @@ mod gui_impl {
             // 状态指示器
             ui.horizontal(|ui| {
                 ui.add_space(10.0);
-                
+
                 let status_text = if self.is_manual_recording {
                     "🎙️  手动录音中"
                 } else if self.is_recording {
@@ -297,7 +297,7 @@ mod gui_impl {
                 } else {
                     "⏸️  已停止"
                 };
-                
+
                 ui.label(
                     egui::RichText::new(status_text)
                         .size(20.0)
@@ -483,9 +483,9 @@ mod gui_impl {
                                 ui.selectable_value(&mut self.config.bit_rate, 320, "320 kbps (最高质量)");
                             });
                     });
-                    
+
                     ui.add_space(5.0);
-                    
+
                     ui.horizontal(|ui| {
                         ui.label("MP3编码质量:");
                         egui::ComboBox::from_id_source("mp3_quality")
@@ -597,15 +597,15 @@ mod gui_impl {
         fn drop(&mut self) {
             *self.stop_signal.lock() = true;
             *self.manual_stop_signal.lock() = true;
-            
+
             if let Some(handle) = self.monitor_thread.take() {
                 let _ = handle.join();
             }
-            
+
             if let Some(handle) = self.audio_monitor_thread.take() {
                 let _ = handle.join();
             }
-            
+
             if let Some(handle) = self.manual_recording_thread.take() {
                 let _ = handle.join();
             }
@@ -614,20 +614,20 @@ mod gui_impl {
 
     fn configure_fonts(ctx: &egui::Context) {
         let mut fonts = egui::FontDefinitions::default();
-        
+
         if let Ok(font_data) = std::fs::read("C:\\Windows\\Fonts\\msyh.ttc") {
             fonts.font_data.insert(
                 "chinese".to_owned(),
                 egui::FontData::from_owned(font_data),
             );
-            
+
             fonts
                 .families
                 .entry(egui::FontFamily::Proportional)
                 .or_default()
                 .insert(0, "chinese".to_owned());
         }
-        
+
         ctx.set_fonts(fonts);
     }
 
@@ -636,9 +636,9 @@ mod gui_impl {
         stop_signal: Arc<Mutex<bool>>,
     ) {
         use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-        
+
         let host = cpal::default_host();
-        
+
         if let Some(mic_device) = host.default_input_device() {
             if let Ok(config) = mic_device.default_input_config() {
                 let levels_clone = Arc::clone(&audio_levels);
@@ -652,7 +652,7 @@ mod gui_impl {
                     None,
                 ) {
                     let _ = stream.play();
-                    
+
                     while !*stop_signal.lock() {
                         std::thread::sleep(Duration::from_millis(100));
                     }
@@ -676,22 +676,22 @@ mod gui_impl {
         use crate::dual_recorder::{DualChannelRecorder, AudioMixer};
         use crate::mp3_encoder::{StreamingMp3Encoder, WavEncoder};
         use std::time::Instant;
-        
+
         println!("🎙️  手动录音开始...");
-        
+
         let start_time = Instant::now();
-        
+
         // 创建双通道录音器
         let mut recorder = DualChannelRecorder::new(config.sample_rate);
         recorder.set_mic_gain(config.mic_gain);
         recorder.set_speaker_gain(config.speaker_gain);
-        
+
         // 开始录音
         let session = recorder.start_recording()?;
-        
+
         // 创建音频混音器
         let mut mixer = AudioMixer::new();
-        
+
         // 创建编码器
         let mut encoder = if config.save_format == AudioFormat::Mp3 {
             Some(StreamingMp3Encoder::new(
@@ -702,41 +702,41 @@ mod gui_impl {
         } else {
             None
         };
-        
+
         let mut all_samples = Vec::new();
-        
+
         // 录音循环
         while !*stop_signal.lock() {
             // 接收麦克风数据
             while let Ok(samples) = session.mic_receiver.try_recv() {
                 mixer.add_mic_samples(samples);
             }
-            
+
             // 接收扬声器数据
             while let Ok(samples) = session.speaker_receiver.try_recv() {
                 mixer.add_speaker_samples(samples);
             }
-            
+
             // 混音
             let mixed = mixer.mix();
             if !mixed.is_empty() {
                 all_samples.extend_from_slice(&mixed);
-                
+
                 // 实时编码(如果使用MP3)
                 if let Some(ref mut enc) = encoder {
                     enc.encode_samples(&mixed)?;
                 }
             }
-            
+
             std::thread::sleep(Duration::from_millis(50));
         }
-        
+
         // 停止录音
         *session.stop_signal.lock() = true;
-        
+
         let duration = start_time.elapsed();
         println!("⏹️  手动录音停止 (时长: {:.1}秒)", duration.as_secs_f32());
-        
+
         // 生成文件名
         let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
         let filename = if config.save_format == AudioFormat::Mp3 {
@@ -744,10 +744,10 @@ mod gui_impl {
         } else {
             format!("manual_{}.wav", timestamp)
         };
-        
+
         std::fs::create_dir_all(&config.output_dir).ok();
         let output_path = config.output_dir.join(filename);
-        
+
         // 保存文件
         match config.save_format {
             AudioFormat::Mp3 => {
@@ -762,7 +762,7 @@ mod gui_impl {
                 println!("💾 手动录音已保存: {:?} (WAV格式)", output_path);
             }
         }
-        
+
         Ok(())
     }
 
@@ -773,7 +773,7 @@ mod gui_impl {
                 .with_resizable(true),
             ..Default::default()
         };
-        
+
         eframe::run_native(
             "智能录音工具 - Smart Recorder",
             options,

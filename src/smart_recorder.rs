@@ -89,14 +89,14 @@ impl SmartRecorder {
             match self.detector.detect_active_sessions() {
                 Ok(sessions) => {
                     let active_apps = self.detector.get_active_apps(&sessions);
-                    
+
                     if !active_apps.is_empty() && !*self.is_recording.lock() {
                         // 检测到新的麦克风使用
                         println!("\n✅ 检测到麦克风使用:");
                         for app in &active_apps {
                             println!("   📱 {}", app);
                         }
-                        
+
                         // 开始录音
                         self.start_recording_session(&active_apps[0])?;
                     } else if active_apps.is_empty() && *self.is_recording.lock() {
@@ -146,7 +146,7 @@ impl SmartRecorder {
         _current_session: Arc<Mutex<Option<String>>>,
     ) -> Result<()> {
         println!("🔴 开始录音...");
-        
+
         let start_time = Instant::now();
 
         // 创建双通道录音器
@@ -189,7 +189,7 @@ impl SmartRecorder {
             let mixed = mixer.mix();
             if !mixed.is_empty() {
                 all_samples.extend_from_slice(&mixed);
-                
+
                 // 实时编码(如果使用MP3)
                 if let Some(ref mut enc) = encoder {
                     enc.encode_samples(&mixed)?;
@@ -213,7 +213,7 @@ impl SmartRecorder {
 
         // 保存文件
         let output_path = Self::generate_output_path(&config, &app_name);
-        
+
         match config.save_format {
             AudioFormat::Mp3 => {
                 if let Some(enc) = encoder {
@@ -233,7 +233,7 @@ impl SmartRecorder {
 
     fn generate_output_path(config: &RecorderConfig, app_name: &str) -> PathBuf {
         let timestamp = Local::now().format("%Y%m%d_%H%M%S");
-        
+
         // 提取应用名(去除.exe)
         let app_basename = app_name
             .trim_end_matches(".exe")

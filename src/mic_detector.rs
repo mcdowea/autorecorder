@@ -110,9 +110,9 @@ impl MicrophoneDetector {
 
         for i in 0..count {
             if let Ok(session_control) = session_enumerator.GetSession(i) {
-                if let Ok(session2): Result<IAudioSessionControl2, _> = session_control.cast::<IAudioSessionControl2>() {
+                if let Ok(session2) = session_control.cast::<IAudioSessionControl2>() {
                     // 获取进程ID
-                    if let Ok(process_id): Result<u32, _> = session2.GetProcessId() {
+                    if let Ok(process_id) = session2.GetProcessId() {
                         if process_id == 0 {
                             continue; // 跳过系统会话
                         }
@@ -211,10 +211,10 @@ mod tests {
         let mut detector = MicrophoneDetector::new();
         detector.add_to_blacklist("chrome.exe".to_string());
         detector.add_to_blacklist("firefox.exe".to_string());
-        
+
         assert!(detector.blacklist.contains("chrome.exe"));
         assert!(detector.blacklist.contains("firefox.exe"));
-        
+
         detector.remove_from_blacklist("chrome.exe");
         assert!(!detector.blacklist.contains("chrome.exe"));
     }

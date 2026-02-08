@@ -34,7 +34,7 @@ impl Mp3Encoder {
         let mut builder = Builder::new().expect("Failed to create MP3 encoder");
         builder.set_num_channels(1).expect("Failed to set channels");
         builder.set_sample_rate(self.sample_rate).expect("Failed to set sample rate");
-        
+
         // 根据比特率设置 LAME 比特率
         let bitrate = match self.bit_rate {
             ..=80 => mp3lame_encoder::Bitrate::Kbps64,
@@ -45,7 +45,7 @@ impl Mp3Encoder {
             _ => mp3lame_encoder::Bitrate::Kbps320,
         };
         builder.set_brate(bitrate).expect("Failed to set bitrate");
-        
+
         // 根据质量设置
         let qual = match self.quality {
             0 => mp3lame_encoder::Quality::Best,
@@ -55,7 +55,7 @@ impl Mp3Encoder {
             _ => mp3lame_encoder::Quality::Fast,
         };
         builder.set_quality(qual).expect("Failed to set quality");
-        
+
         let mut encoder = builder.build().expect("Failed to build encoder");
 
         // 转换f32到i16
@@ -68,7 +68,7 @@ impl Mp3Encoder {
         let input = InterleavedPcm(&pcm_samples);
         let mut mp3_buffer = Vec::new();
         mp3_buffer.reserve(mp3lame_encoder::max_required_buffer_size(pcm_samples.len()));
-        
+
         // 编码样本
         let encoded_size = encoder.encode(input, mp3_buffer.spare_capacity_mut())
             .context("Failed to encode audio")?;
@@ -105,7 +105,7 @@ impl StreamingMp3Encoder {
         let mut builder = Builder::new().expect("Failed to create MP3 encoder");
         builder.set_num_channels(1).expect("Failed to set channels");
         builder.set_sample_rate(sample_rate).expect("Failed to set sample rate");
-        
+
         // 根据比特率设置
         let bitrate = match bit_rate {
             ..=80 => mp3lame_encoder::Bitrate::Kbps64,
@@ -116,7 +116,7 @@ impl StreamingMp3Encoder {
             _ => mp3lame_encoder::Bitrate::Kbps320,
         };
         builder.set_brate(bitrate).expect("Failed to set bitrate");
-        
+
         // 根据质量设置
         let qual = match quality {
             0 => mp3lame_encoder::Quality::Best,
@@ -126,7 +126,7 @@ impl StreamingMp3Encoder {
             _ => mp3lame_encoder::Quality::Fast,
         };
         builder.set_quality(qual).expect("Failed to set quality");
-        
+
         let encoder = builder.build().expect("Failed to build encoder");
 
         Ok(Self {
@@ -146,16 +146,16 @@ impl StreamingMp3Encoder {
             .collect();
 
         let input = InterleavedPcm(&pcm_samples);
-        
+
         // 为编码预留空间
         let required_size = mp3lame_encoder::max_required_buffer_size(pcm_samples.len());
         let current_len = self.mp3_buffer.len();
         self.mp3_buffer.reserve(required_size);
-        
+
         // 编码到缓冲区
         let encoded_size = self.encoder.encode(input, &mut self.mp3_buffer.spare_capacity_mut()[..required_size])
             .context("Failed to encode samples")?;
-        
+
         unsafe { self.mp3_buffer.set_len(current_len + encoded_size); }
 
         Ok(())
@@ -169,10 +169,10 @@ impl StreamingMp3Encoder {
         let flush_size = 7200; // LAME 推荐的 flush 缓冲区大小
         let current_len = self.mp3_buffer.len();
         self.mp3_buffer.reserve(flush_size);
-        
+
         let flushed_size = self.encoder.flush::<FlushNoGap>(&mut self.mp3_buffer.spare_capacity_mut()[..flush_size])
             .context("Failed to flush encoder")?;
-        
+
         unsafe { self.mp3_buffer.set_len(current_len + flushed_size); }
 
         Ok(self.mp3_buffer)
@@ -230,12 +230,12 @@ mod tests {
     #[test]
     fn test_wav_encoder() {
         let encoder = WavEncoder::new(44100);
-        
+
         // 生成1秒的440Hz正弦波
         let duration = 1.0;
         let frequency = 440.0;
         let sample_rate = 44100.0;
-        
+
         let samples: Vec<f32> = (0..(duration * sample_rate) as usize)
             .map(|i| {
                 let t = i as f32 / sample_rate;
